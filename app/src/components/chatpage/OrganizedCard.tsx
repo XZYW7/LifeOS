@@ -111,7 +111,10 @@ export default function OrganizedCard({ organizeId }: { organizeId: string }) {
   const receipts = result.receipts ?? [];
 
   const doneReceipts = receipts.filter((r) => r.kind === 'done');
-  const skippedReceipts = receipts.filter((r) => r.kind === 'skipped');
+  // 同轮已有成功任务操作时，忽略后续重复调用产生的失效 taskId 噪声。
+  const skippedReceipts = receipts.filter((r) =>
+    r.kind === 'skipped' && !(doneReceipts.length > 0 && r.skipReason === 'taskId 无效'),
+  );
   const suggestions = receipts.filter((r) => r.kind === 'suggestion');
 
   // 没有任何落库、跳过或建议时，不占用对话流，也不提供无意义的撤销。

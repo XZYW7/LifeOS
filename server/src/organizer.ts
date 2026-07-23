@@ -808,6 +808,7 @@ async function runToolCalls(
   };
   const receipts: Receipt[] = [];
   const hasTaskMutation = calls.some((call) => ['add_task', 'complete_task', 'update_task'].includes(call.tool));
+  const mutatedTaskIds = new Set<string>();
   for (const call of calls) {
     const tool = TOOLS[call.tool];
     if (!tool) {
@@ -818,6 +819,10 @@ async function runToolCalls(
       receipts.push(skipped('record_memory', '本轮含待办操作，只保留任务回执，未写入长期记忆', '任务操作不沉淀为记忆'));
       continue;
     }
+    const taskId = (call.tool === 'complete_task' || call.tool === 'update_task')
+      ? clampStr(call.args.taskId, 80)
+      : '';
+    if (taskId && mutatedTaskIds.has(taskId)) continue;
     // create_version 一轮只允许 1 次（同一阶段重复提交没有语义，LLM 偶发连发两次会造成重复版本）
     const toolLimit = call.tool === 'create_version' ? 1 : MAX_PER_TOOL;
     if ((ctx.perTool[call.tool] ?? 0) >= toolLimit) {
@@ -827,7 +832,10 @@ async function runToolCalls(
     try {
       const receipt = await tool.run(state, call.args, ctx);
       receipts.push(receipt);
-      if (receipt.kind === 'done') ctx.perTool[call.tool] = (ctx.perTool[call.tool] ?? 0) + 1;
+      if (receipt.kind === 'done') {
+        ctx.perTool[call.tool] = (ctx.perTool[call.tool] ?? 0) + 1;
+        if (taskId) mutatedTaskIds.add(taskId);
+      }
     } catch (e) {
       console.warn(`[organizer] 工具 ${call.tool} 执行异常:`, (e as Error).message);
       receipts.push(skipped(call.tool, `工具 ${call.tool} 执行失败，已跳过`, (e as Error).message));
