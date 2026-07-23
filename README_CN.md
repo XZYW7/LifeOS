@@ -1,6 +1,6 @@
 # LifeOS
 
-一个本地优先的个人生命操作系统，目标是在疲惫、混乱和信息过载时，接住正在失稳的生活。
+一个自托管、局域网优先的个人生命操作系统，目标是在疲惫、混乱和信息过载时，接住正在失稳的生活。
 
 [English](./README.md) | [中文](./README_CN.md)
 
@@ -40,11 +40,11 @@ LifeOS 把日常对话和零散记录转化为持续可用的上下文：
 
 ## 核心功能
 
-- **本地优先架构**：所有数据离线存储，无需云同步
+- **自托管、局域网优先架构**：服务器和主要数据运行在自己的 PC 上，手机及其他设备通过局域网连接
 - **AI 驱动记忆**：使用 LLM 从记忆条目自动生成用户画像
 - **Memex 集成**：一次性导入 memex 备份档案
-- **实时同步**：前后端数据实时更新
-- **移动端支持**：基于 Capacitor 的 iOS/Android 应用
+- **前后端同步**：局域网客户端与 PC 服务器之间实时更新状态
+- **移动端支持**：基于 Capacitor 的 Android 客户端，移动壳可扩展至 iOS
 - **线程组织**：将记忆按对话线程分类组织
 
 ## 项目结构
@@ -87,6 +87,8 @@ npm run dev -- --host
 
 然后在浏览器中打开 [http://localhost:5173](http://localhost:5173)
 
+手机或同一局域网内的其他设备请打开 `http://<PC局域网IP>:5173`。LifeOS 服务器仍运行在 PC 上，前端代理会将 API 请求转发到该 PC 的 3456 端口。
+
 ## 环境配置
 
 在 `server/.env` 中配置 LLM：
@@ -120,6 +122,9 @@ LLM_API_KEY=sk-xxxxx
 State (server/data/state.json)
 ├── profile        # 用户画像（≤800 字符，自动生成）
 ├── memories[]     # 记忆条目（证据层）
+├── knowledge[]    # 方法、资源、笔记等长期知识
+├── tasks[]        # 行动层
+├── dailyStates[]  # 每日打卡与能量状态
 └── threads[]      # 对话线程
 ```
 
@@ -137,11 +142,12 @@ tags: [标签1, 标签2]
 记忆内容，支持 Markdown 格式。
 ```
 
-### 数据同步机制
+### 前后端状态
 
-- **前端**：React Zustand store 配合 localStorage 持久化
-- **后端**：原子性 JSON 写入 `state.json`
+- **PC 服务器**：权威状态存储在主机 PC 上，以原子方式写入 `state.json`
+- **局域网客户端**：浏览器或手机端使用 localStorage 保持界面连续性，并与 PC 服务器同步
 - **启动时**：若服务器状态为空但本地浏览器有数据，前端会将本地数据同步回服务器
+- **边界**：目前还不是完整的离线优先同步，客户端完整使用仍依赖 PC 服务器
 - **清空**：同时清除服务器和客户端数据
 
 ### 画像生成流程
@@ -193,7 +199,7 @@ npm run lint         # 运行 ESLint
 
 ```bash
 cd server
-npm run types:check  # 验证 TypeScript 类型
+npm run typecheck    # 验证 TypeScript 类型
 ```
 
 ## 移动应用构建
@@ -211,7 +217,7 @@ npx cap build android
 
 ## 隐私与数据
 
-- **纯本地存储**：无云同步，无用户追踪
+- **自托管数据**：主要数据存储在主机 PC 上，默认无云同步和用户追踪
 - **数据所有权**：您完全掌控自己的记忆
 - **LLM 调用是显式功能**：聊天、碎片抽取、画像合成和 Dream 可能将选中的本地上下文发送至配置的 LLM API
 - **Memex 导入一次性**：导入后无持续同步
@@ -237,7 +243,7 @@ npx cap build android
 
 ### 端口被占用
 
-- 后端（3456）：`pkill -f "node.*server"` 或修改 `vite.config.ts` 中的端口
+- 后端（3456）：使用 `Ctrl+C` 停止运行中的进程，或在服务器环境中修改 `LIFEOS_PORT`
 - 前端（5173）：Vite 会自动递增端口，查看终端输出
 
 ### LLM API 错误
@@ -249,7 +255,7 @@ npx cap build android
 ### 状态同步问题
 
 - 清除浏览器缓存和 localStorage：DevTools → Application → Clear Storage
-- 验证后端是否运行：`curl http://localhost:3456/api/state`
+- 验证后端是否运行：`curl.exe http://localhost:3456/api/state`
 - 检查 `server/data/state.json` 存在且是有效 JSON
 
 ## 开发计划

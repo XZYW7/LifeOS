@@ -1,6 +1,6 @@
 # LifeOS
 
-A local-first personal life operating system designed to keep life from falling apart under stress, fatigue, and information overload.
+A self-hosted, LAN-first personal life operating system designed to keep life from falling apart under stress, fatigue, and information overload.
 
 [English](./README.md) | [中文](./README_CN.md)
 
@@ -40,11 +40,11 @@ The system is designed to let you record first and organize later. The AI helps 
 
 ## Features
 
-- **Local-First Architecture**: All data stored locally, no cloud sync required
+- **Self-Hosted, LAN-First Architecture**: The server and primary data live on your own PC; phones and other devices connect over the local network
 - **AI-Powered Memory**: Automatic profile generation from memory entries using LLM
 - **Memex Integration**: One-time import of memex backup archives
-- **Real-Time Sync**: Live updates between frontend and backend
-- **Mobile Support**: Capacitor-based iOS/Android apps
+- **Client-Server Sync**: Live state updates between LAN clients and the PC server
+- **Mobile Support**: Capacitor-based Android client, with the mobile shell extensible to iOS
 - **Thread-Based Organization**: Organize memories into conversational threads
 
 ## Project Structure
@@ -87,6 +87,8 @@ Frontend runs on `http://localhost:5173`
 
 Then open [http://localhost:5173](http://localhost:5173) in your browser.
 
+For a phone or another device on the same LAN, open `http://<PC-LAN-IP>:5173` instead. Keep the LifeOS server running on the PC; the frontend proxy forwards API requests to port 3456 on that PC.
+
 ## Environment Configuration
 
 Create `server/.env`:
@@ -120,6 +122,9 @@ Supported LLM providers:
 State (server/data/state.json)
 ├── profile        # User avatar (≤800 chars, auto-generated)
 ├── memories[]     # Evidence layer (full memory entries)
+├── knowledge[]    # Methods, resources, notes, and other durable knowledge
+├── tasks[]        # Action layer
+├── dailyStates[]  # Daily check-ins and energy state
 └── threads[]      # Conversational threads
 ```
 
@@ -137,11 +142,12 @@ tags: [tag1, tag2]
 Memory content in markdown format.
 ```
 
-### Sync Mechanism
+### Client-Server State
 
-- **Frontend**: React Zustand store with localStorage persistence
-- **Backend**: Atomic JSON writes to `state.json`
+- **PC server**: The authoritative state is stored locally on the host PC with atomic JSON writes to `state.json`
+- **LAN clients**: The browser or mobile client keeps a localStorage copy for UI continuity and synchronizes with the PC server
 - **Startup**: If server state is blank and local browser has data, frontend syncs local data back to server
+- **Boundary**: This is not full offline-first sync yet; clients currently depend on the PC server for the complete application state
 - **Clear**: Wipes all data from both server and client
 
 ### Profile Generation Pipeline
@@ -193,7 +199,7 @@ See `server/src/index.ts` for full API specification.
 
 ```bash
 cd server
-npm run types:check  # Verify TypeScript types
+  npm run typecheck    # Verify TypeScript types
 ```
 
 ## Mobile Build
@@ -211,7 +217,7 @@ See [docs/APK-BUILD.md](./docs/APK-BUILD.md) for detailed build instructions.
 
 ## Privacy & Data
 
-- **All data is local**: No cloud sync, no telemetry
+- **Self-hosted data**: Primary data is stored on the host PC; no cloud sync or telemetry is enabled by default
 - **No user tracking**: You own your memories
 - **LLM calls are explicit**: Chat, capture extraction, profile synthesis, and Dream may send selected local context to the configured LLM API
 - **Memex import is one-time**: No ongoing sync with memex after import
@@ -239,7 +245,7 @@ We welcome bug reports, feature requests, and pull requests. Please see [CONTRIB
 
 ### Port Already in Use
 
-- Backend (3456): `pkill -f "node.*server"` or change port in `vite.config.ts`
+- Backend (3456): stop the running process with `Ctrl+C`, or change `LIFEOS_PORT` in the server environment
 - Frontend (5173): Vite will auto-increment port; check terminal output
 
 ### LLM API Errors
@@ -251,7 +257,7 @@ We welcome bug reports, feature requests, and pull requests. Please see [CONTRIB
 ### State Sync Issues
 
 - Clear browser cache and localStorage: DevTools → Application → Clear Storage
-- Verify backend is running: `curl http://localhost:3456/api/state`
+- Verify backend is running: `curl.exe http://localhost:3456/api/state`
 - Check `server/data/state.json` exists and is valid JSON
 
 ## Roadmap
