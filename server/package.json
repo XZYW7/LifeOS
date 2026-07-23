@@ -1,0 +1,21 @@
+{
+  "name": "lifeos-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LifeOS P0 core server: state storage + LLM chat agent",
+  "scripts": {
+    "dev": "tsx --env-file .env src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tsx": "^4.19.2",
+    "yaml": "^2.9.0",
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/yauzl": "^3.4.0",
+    "typescript": "^5.6.0"
+  }
+}

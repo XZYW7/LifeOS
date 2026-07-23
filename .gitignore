@@ -1,0 +1,78 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+**/dist/
+build/
+**/build/
+coverage/
+*.tsbuildinfo
+
+# Environment files and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+!server/.env.example
+*.local
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+
+# Runtime logs and caches
+*.log
+logs/
+tmp/
+temp/
+
+# Server runtime data
+server/data/*
+!server/data/.gitkeep
+
+# Frontend / mobile local artifacts
+app/.vite/
+app/.capacitor/
+app/android/.gradle/
+app/android/app/build/
+app/android/app/release/
+app/android/build/
+app/android/local.properties
+*.apk
+*.aab
+
+# Toolchain (local buildtools - too large for repo)
+toolchain/
+
+# Reference / research archives (optional: can be submodule instead)
+references/
+docs/*
+!docs/api-contract.md
+!docs/APK-BUILD.md
+
+# Internal / debug scripts
+scripts/
+*.bat
+!start-lifeos.bat
+!启动-LifeOS.bat
+!app/android/gradlew.bat
+
+# Copilot / IDE local configs
+.claude/
+.kiro/
+plan.md
+
+# Editor / OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Generated reports / artifacts
+*.map
+*.zip
+*.tar
+*.gz

@@ -1,0 +1,231 @@
+# LifeOS
+
+个人生命操作系统，由 AI 驱动，专为本地数据存储和自主记忆管理而设计。
+
+[English](./README.md) | [中文](./README_CN.md)
+
+## 核心功能
+
+- **本地优先架构**：所有数据离线存储，无需云同步
+- **AI 驱动记忆**：使用 LLM 从记忆条目自动生成用户画像
+- **Memex 集成**：一次性导入 memex 备份档案
+- **实时同步**：前后端数据实时更新
+- **移动端支持**：基于 Capacitor 的 iOS/Android 应用
+- **线程组织**：将记忆按对话线程分类组织
+
+## 项目结构
+
+```
+LifeOS/
+├── app/              # 前端（React + TypeScript + Vite）
+├── server/           # 后端（Node.js + TypeScript）
+└── design/           # 架构和 UI/UX 文档
+```
+
+## 快速开始
+
+### 系统要求
+
+- Node.js 20+
+- npm 或 pnpm
+
+### 1. 后端启动
+
+```bash
+cd server
+npm install
+cp .env.example .env
+# 编辑 .env 配置 LLM 提供商和 API 密钥
+npm run dev
+```
+
+后端运行在 `http://localhost:3456`
+
+### 2. 前端启动（新终端）
+
+```bash
+cd app
+npm install
+npm run dev -- --host
+```
+
+前端运行在 `http://localhost:5173`
+
+然后在浏览器中打开 [http://localhost:5173](http://localhost:5173)
+
+## 环境配置
+
+在 `server/.env` 中配置 LLM：
+
+```env
+# LLM 提供商
+LLM_PROVIDER=deepseek
+
+# 模型名称（默认：deepseek-chat）
+LLM_MODEL=deepseek-chat
+
+# API 密钥
+LLM_API_KEY=sk-xxxxx
+
+# 可选：自定义 API 端点
+# LLM_BASE_URL=https://api.deepseek.com/v1
+```
+
+详见 [server/.env.example](./server/.env.example) 了解其他提供商配置（OpenAI、Ollama 等）
+
+**支持的 LLM 提供商**：
+- **deepseek**（默认）
+- **openai**
+- **ollama**（本地）
+
+## 架构设计
+
+### 数据模型
+
+```
+State (server/data/state.json)
+├── profile        # 用户画像（≤800 字符，自动生成）
+├── memories[]     # 记忆条目（证据层）
+└── threads[]      # 对话线程
+```
+
+记忆条目以 Markdown 文件形式存储在 `server/data/memory/`，含 YAML 前言：
+
+```markdown
+---
+id: uuid
+title: 记忆标题
+createdAt: ISO-8601
+confirmCount: 确认次数
+tags: [标签1, 标签2]
+---
+
+记忆内容，支持 Markdown 格式。
+```
+
+### 数据同步机制
+
+- **前端**：React Zustand store 配合 localStorage 持久化
+- **后端**：原子性 JSON 写入 `state.json`
+- **启动时**：若服务器状态为空但本地浏览器有数据，前端会将本地数据同步回服务器
+- **清空**：同时清除服务器和客户端数据
+
+### 画像生成流程
+
+1. **证据层**：`state.memories` 中的所有记忆条目
+2. **筛选**：按 `confirmCount` 取前 40 条
+3. **LLM 合成**：DeepSeek 基于选中记忆改写画像
+4. **摘要层**：画像（<800 字）注入到聊天上下文
+5. **触发条件**：≥5 条新记忆未同步时更新画像
+
+## Memex 集成
+
+从 [memex](https://github.com/memex-lab/memex) 备份导入记忆：
+
+1. 从 memex 导出备份为 `.memex` ZIP 文件
+2. 在 LifeOS 设置 → Memex 中上传 ZIP
+3. 一次性导入 Cards（作为 MemoryEntry）和 PKM（作为 KnowledgeItem）
+
+**说明**：LifeOS 仅支持 memex 的备份数据格式（ZIP + YAML/Markdown 解析），不包含 memex 源代码。详见 [NOTICE.md](./NOTICE.md) 的说明。
+
+## 开发
+
+### 常用脚本
+
+**后端：**
+```bash
+npm run dev          # 启动开发服务器，启用文件监听
+npm run typecheck    # 验证 TypeScript 类型
+```
+
+**前端：**
+```bash
+npm run dev          # 启动 Vite 开发服务器，启用 HMR
+npm run build        # 构建生产版本
+npm run preview      # 预览生产版本
+npm run lint         # 运行 ESLint
+```
+
+### API 端点
+
+- `GET /api/state` — 获取当前状态
+- `PUT /api/state` — 更新状态
+- `POST /api/chat` — 与 AI 代理聊天
+- `POST /api/import/memex` — 导入 memex 备份 ZIP
+
+详见 `server/src/index.ts` 的完整 API 规范。
+
+### 类型检查
+
+```bash
+cd server
+npm run types:check  # 验证 TypeScript 类型
+```
+
+## 移动应用构建
+
+### Android APK
+
+```bash
+cd app
+npx cap add android
+npx cap sync android
+npx cap build android
+```
+
+详见 [docs/APK-BUILD.md](./docs/APK-BUILD.md) 的详细构建说明。
+
+## 隐私与数据
+
+- **纯本地存储**：无云同步，无用户追踪
+- **数据所有权**：您完全掌控自己的记忆
+- **LLM 调用是显式功能**：聊天、碎片抽取、画像合成和 Dream 可能将选中的本地上下文发送至配置的 LLM API
+- **Memex 导入一次性**：导入后无持续同步
+
+## 许可证与致谢
+
+- **LifeOS 主项目**：[MIT License](./LICENSE)
+- **memex 互操作**：LifeOS 仅支持 memex 的备份数据格式，不包含 memex 源代码。详见 [NOTICE.md](./NOTICE.md)
+- **UI 组件**：使用 [shadcn/ui](https://ui.shadcn.com/)（MIT）
+- **核心框架**：[React](https://react.dev/)、[Vite](https://vitejs.dev/)、[Capacitor](https://capacitorjs.com/)
+
+## 安全边界
+
+开发服务器为了让 Android 客户端和 Agent 调试连接，默认监听局域网地址。
+当前局域网模式没有认证：只应在可信的私有网络中使用，保持主机防火墙开启，
+不要把 3456 端口暴露到公网。详见 [SECURITY.md](./SECURITY.md)。
+
+## 贡献
+
+欢迎提交 bug 报告、功能建议和 PR。详见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+
+## 常见问题
+
+### 端口被占用
+
+- 后端（3456）：`pkill -f "node.*server"` 或修改 `vite.config.ts` 中的端口
+- 前端（5173）：Vite 会自动递增端口，查看终端输出
+
+### LLM API 错误
+
+- 检查 `.env` 中 API 密钥和 base URL 正确
+- 验证网络连接到 LLM 提供商
+- 查看 `server/src/llm.ts` 的详细错误日志
+
+### 状态同步问题
+
+- 清除浏览器缓存和 localStorage：DevTools → Application → Clear Storage
+- 验证后端是否运行：`curl http://localhost:3456/api/state`
+- 检查 `server/data/state.json` 存在且是有效 JSON
+
+## 开发计划
+
+- [ ] 离线优先同步（IndexedDB 支持大数据集）
+- [ ] 端到端加密选项
+- [ ] 多设备同步
+- [ ] iOS 原生优化
+- [ ] 插件系统
+
+---
+
+**有问题？** 在本仓库提交 Issue 或讨论。

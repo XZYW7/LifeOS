@@ -1,0 +1,25 @@
+{
+  "name": "LifeOS 随手记",
+  "short_name": "随手记",
+  "description": "LifeOS 移动端随手记：碎片想法，随手归档。",
+  "display": "standalone",
+  "orientation": "portrait",
+  "start_url": "/capture",
+  "scope": "/",
+  "background_color": "#17140f",
+  "theme_color": "#17140f",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

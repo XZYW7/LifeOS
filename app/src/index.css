@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * LifeOS 主题：暗色暖调低饱和"科幻操作系统"
+ * 背景深棕黑 / 卡片暖褐 / 主强调琥珀 / 辅助橄榄绿 / 文字暖白
+ * 禁止蓝紫渐变与高饱和背景。
+ */
+@layer base {
+  :root {
+    --background: 36 21% 7%;        /* #17140f 深棕黑 */
+    --foreground: 40 34% 86%;       /* #e8e0d0 暖白 */
+    --card: 35 20% 12%;             /* #241f18 卡片 */
+    --card-foreground: 40 34% 86%;
+    --popover: 35 20% 12%;
+    --popover-foreground: 40 34% 86%;
+    --primary: 37 61% 56%;          /* #d4a04c 琥珀 */
+    --primary-foreground: 36 30% 10%;
+    --secondary: 75 26% 42%;        /* 橄榄绿系 */
+    --secondary-foreground: 40 34% 90%;
+    --muted: 35 14% 18%;
+    --muted-foreground: 39 14% 60%; /* #a89e8c 次要文字 */
+    --accent: 35 16% 20%;
+    --accent-foreground: 40 34% 86%;
+    --destructive: 12 55% 48%;
+    --destructive-foreground: 40 34% 90%;
+    --border: 36 21% 19%;           /* #3a3226 细边框 */
+    --input: 36 21% 19%;
+    --ring: 37 61% 56%;
+    --radius: 0.625rem;
+    --sidebar-background: 36 24% 9%;
+    --sidebar-foreground: 40 34% 86%;
+    --sidebar-primary: 37 61% 56%;
+    --sidebar-primary-foreground: 36 30% 10%;
+    --sidebar-accent: 35 16% 16%;
+    --sidebar-accent-foreground: 40 34% 86%;
+    --sidebar-border: 36 21% 16%;
+    --sidebar-ring: 37 61% 56%;
+  }
+
+  /* 深色即默认，.dark 保持一致以兼容 next-themes */
+  .dark {
+    --background: 36 21% 7%;
+    --foreground: 40 34% 86%;
+    --card: 35 20% 12%;
+    --card-foreground: 40 34% 86%;
+    --popover: 35 20% 12%;
+    --popover-foreground: 40 34% 86%;
+    --primary: 37 61% 56%;
+    --primary-foreground: 36 30% 10%;
+    --secondary: 75 26% 42%;
+    --secondary-foreground: 40 34% 90%;
+    --muted: 35 14% 18%;
+    --muted-foreground: 39 14% 60%;
+    --accent: 35 16% 20%;
+    --accent-foreground: 40 34% 86%;
+    --destructive: 12 55% 48%;
+    --destructive-foreground: 40 34% 90%;
+    --border: 36 21% 19%;
+    --input: 36 21% 19%;
+    --ring: 37 61% 56%;
+    --sidebar-background: 36 24% 9%;
+    --sidebar-foreground: 40 34% 86%;
+    --sidebar-primary: 37 61% 56%;
+    --sidebar-primary-foreground: 36 30% 10%;
+    --sidebar-accent: 35 16% 16%;
+    --sidebar-accent-foreground: 40 34% 86%;
+    --sidebar-border: 36 21% 16%;
+    --sidebar-ring: 37 61% 56%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body {
+    /* 移动端横向溢出兜底：任何页面都不允许出现横向滚动条 */
+    overflow-x: hidden;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.28);
+  }
+  /* 移动端输入框 ≥16px：防止 iOS Safari 聚焦时自动缩放页面 */
+  @media (max-width: 767px) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* 数据 / 版本号点缀用等宽字体 */
+  .font-data {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 视口高度：dvh 优先（移动端键盘/地址栏自适应），vh 兜底 */
+  .h-viewport {
+    height: 100vh;
+    height: 100dvh;
+  }
+}
+
+/* 细滚动条，贴合暗色主题 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 6px;
+  border: 2px solid hsl(var(--background));
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
