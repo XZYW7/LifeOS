@@ -439,16 +439,24 @@ const TOOLS: Record<string, ToolDef> = {
   // ── 用户改期/改名已有待办 → 更新任务（标题模糊匹配，唯一命中才执行）──
   update_task: {
     name: 'update_task',
-    schema: `update_task {"taskTitle": "待办标题或关键词", "newDate": "新日期 YYYY-MM-DD（根据今天日期换算，如“改到周五”）", "newTitle": "新标题，可选"} —— 用户明确说某个待办改期/改时间/改内容时调用（如“笔试改到星期五”）。newDate 和 newTitle 至少给一个。`,
+    schema: `update_task {"taskTitle": "待办标题或关键词", "newDate": "新日期 YYYY-MM-DD（可选）", "newTitle": "新标题，可选", "newRecurrence": "unchanged|once|daily|weekly:0,6|monthly，可选"} —— 用户明确说某个待办改期、改周期或改内容时调用。newRecurrence=once 表示取消周期、变为一次性任务；改成每周几时用 weekly:0,6（0=周日）。至少提供 newDate/newTitle/newRecurrence 之一。`,
     async run(state, args) {
       const q = clampStr(args.taskTitle, 80);
       if (!q) return skipped('update_task', 'taskTitle 为空，已跳过', 'taskTitle 为空');
       const newDate = clampStr(args.newDate, 10);
       const newTitle = clampStr(args.newTitle, 60);
+      const newRecurrenceRaw = clampStr(args.newRecurrence, 30).toLowerCase();
+      const recurrenceRequested = !!newRecurrenceRaw && newRecurrenceRaw !== 'unchanged';
+      const newRecurrence = recurrenceRequested ? parseRecurrence(newRecurrenceRaw) : undefined;
       if (newDate && !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
         return skipped('update_task', `新日期格式非法「${newDate}」，已跳过`, 'newDate 非 YYYY-MM-DD');
       }
-      if (!newDate && !newTitle) return skipped('update_task', '没有要改的内容，已跳过', 'newDate/newTitle 均为空');
+      if (recurrenceRequested && !newRecurrence && !['once', 'none'].includes(newRecurrenceRaw)) {
+        return skipped('update_task', `周期规则非法「${newRecurrenceRaw}」，已跳过`, 'newRecurrence 非法');
+      }
+      if (!newDate && !newTitle && !recurrenceRequested) {
+        return skipped('update_task', '没有要改的内容，已跳过', 'newDate/newTitle/newRecurrence 均为空');
+      }
 
       const todos = state.tasks.filter((t) => t.status === 'todo');
       const hits = todos.filter((t) => t.title === q || t.title.includes(q) || q.includes(t.title));
@@ -474,10 +482,32 @@ const TOOLS: Record<string, ToolDef> = {
         );
       }
       const task = hits[0];
-      const undoPayload: Record<string, string> = { date: task.date, title: task.title };
+      const undoPayload: Record<string, string> = {
+        date: task.date,
+        title: task.title,
+        kind: task.kind ?? '',
+        recurrence: task.recurrence ? JSON.stringify(task.recurrence) : '',
+        lastCompletedAt: task.lastCompletedAt ?? '',
+      };
       const changes: string[] = [];
       if (newDate && newDate !== task.date) { task.date = newDate; changes.push(`改期到 ${newDate}`); }
       if (newTitle && newTitle !== task.title) { task.title = newTitle; changes.push(`改名为「${newTitle}」`); }
+      if (recurrenceRequested) {
+        if (newRecurrence) {
+          const same = task.kind === 'recurring'
+            && JSON.stringify(task.recurrence) === JSON.stringify(newRecurrence);
+          if (!same) {
+            task.kind = 'recurring';
+            task.recurrence = newRecurrence;
+            changes.push(`改为${{ daily: '每日', weekly: '每周', monthly: '每月' }[newRecurrence.frequency]}任务`);
+          }
+        } else if (task.kind !== 'once' || task.recurrence) {
+          task.kind = 'once';
+          delete task.recurrence;
+          delete task.lastCompletedAt;
+          changes.push('改为一次性任务');
+        }
+      }
       if (changes.length === 0) return skipped('update_task', `待办「${task.title}」无需变更`, '新旧值相同');
       const thread = task.threadId ? state.threads.find((t) => t.id === task.threadId) : undefined;
       return {
@@ -698,7 +728,10 @@ function buildPrompt(input: OrganizerRunInput): string {
   const todoList = todoTasks.length > 0
     ? todoTasks.map((t) => {
         const th = t.threadId ? snapshot.threads.find((x) => x.id === t.threadId) : undefined;
-        return `- ${t.title}${th ? `（线程：${th.title}）` : ''}`;
+        const recurrence = t.recurrence?.frequency === 'daily' ? '每日'
+          : t.recurrence?.frequency === 'weekly' ? '每周'
+            : t.recurrence?.frequency === 'monthly' ? '每月' : '一次性';
+        return `- ${t.title}（执行日：${t.date}，${recurrence}${th ? `，线程：${th.title}` : ''}）`;
       }).join('\n')
     : '（当前没有待办任务）';
 
@@ -765,7 +798,7 @@ ${Object.values(TOOLS).map((t) => `- ${t.schema}`).join('\n')}
 
 【判断规则】（逐条对照用户消息检查，命中的规则【必须】生成对应工具调用，不允许忽略）
 - 用户明确说做完了/搞定了/提交了某事，且【当前待办】里有相关条目 → 必须 complete_task
-- 用户明确说某个待办改期/改时间/推迟/改内容（如“笔试改到星期五”）→ 必须 update_task（newDate 按今天日期换算成 YYYY-MM-DD）
+- 用户明确说某个待办改期、改时间、推迟、改周期或改内容（如“笔试改到星期五”“通模改成每周三次”）→ 必须 update_task；newDate 按今天日期换算，周期写入 newRecurrence
 - 用户明确说记版本 / 阶段结束 / 总结一下这段 → 必须 create_version（title 形如「2026年7月·求职季」，summary 基于【版本上下文】的真实数据起草，不要编造）
 - 用户明确说某线程暂停 / 恢复 / 完结 → 必须 update_thread
 - 用户明确承诺要去做某事 → add_task；执行日按用户明确说的日期填写，未指定日期才默认今天
@@ -980,6 +1013,18 @@ export async function undoOrganize(id: string): Promise<UndoOutcome | null> {
         if (!task || !r.undoPayload) { skippedList.push(r.summary); break; }
         task.date = r.undoPayload.date ?? task.date;
         task.title = r.undoPayload.title ?? task.title;
+        if (r.undoPayload.kind) task.kind = r.undoPayload.kind as Task['kind'];
+        else delete task.kind;
+        if (r.undoPayload.recurrence) {
+          try {
+            const recurrence = JSON.parse(r.undoPayload.recurrence) as Task['recurrence'];
+            if (recurrence?.frequency === 'daily' || recurrence?.frequency === 'weekly' || recurrence?.frequency === 'monthly') {
+              task.recurrence = recurrence;
+            }
+          } catch { delete task.recurrence; }
+        } else delete task.recurrence;
+        if (r.undoPayload.lastCompletedAt) task.lastCompletedAt = r.undoPayload.lastCompletedAt;
+        else delete task.lastCompletedAt;
         undone.push(r.summary);
         break;
       }
