@@ -5,7 +5,8 @@
   "type": "module",
   "description": "LifeOS P0 core server: state storage + LLM chat agent",
   "scripts": {
-    "dev": "tsx --env-file .env src/index.ts",
+    "dev": "tsx watch --env-file .env src/index.ts",
+    "dev:once": "tsx --env-file .env src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
