@@ -56,6 +56,46 @@ function clampStr(v: unknown, max: number): string {
   return typeof v === 'string' ? v.trim().slice(0, max) : '';
 }
 
+function nextRecurringDate(task: Task): string {
+  const rule = task.recurrence;
+  if (!rule) return task.date;
+  const [y, m, d] = task.date.split('-').map(Number);
+  const current = new Date(y, m - 1, d);
+  const interval = Math.max(1, rule.interval ?? 1);
+  if (rule.frequency === 'daily') current.setDate(current.getDate() + interval);
+  else if (rule.frequency === 'monthly') current.setMonth(current.getMonth() + interval);
+  else if (rule.weekdays?.length) {
+    const weekdays = new Set(rule.weekdays.filter((day) => day >= 0 && day <= 6));
+    for (let i = 1; i <= 14 * interval; i++) {
+      const candidate = new Date(current);
+      candidate.setDate(current.getDate() + i);
+      if (weekdays.has(candidate.getDay())) return formatDate(candidate);
+    }
+  } else current.setDate(current.getDate() + 7 * interval);
+  return formatDate(current);
+}
+
+function formatDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function parseRecurrence(value: unknown): Task['recurrence'] {
+  if (typeof value !== 'string') return undefined;
+  const raw = value.trim().toLowerCase();
+  if (!raw || raw === 'none' || raw === 'once') return undefined;
+  if (raw === 'daily' || raw === '每日' || raw === '每天') return { frequency: 'daily' };
+  if (raw === 'monthly' || raw === '每月') return { frequency: 'monthly' };
+  if (raw.startsWith('weekly') || raw.startsWith('每周') || raw.startsWith('每星期')) {
+    const suffix = raw.split(':')[1] ?? '';
+    const weekdays = suffix
+      .split(',')
+      .map((v) => Number(v.trim()))
+      .filter((v) => Number.isInteger(v) && v >= 0 && v <= 6);
+    return weekdays.length ? { frequency: 'weekly', weekdays } : { frequency: 'weekly' };
+  }
+  return undefined;
+}
+
 /** energy 维度 value 归一化：接受 high|medium|low，容忍中文描述 */
 function normalizeEnergy(v: string): EnergyLevel | null {
   const s = v.trim().toLowerCase();
@@ -251,7 +291,7 @@ const TOOLS: Record<string, ToolDef> = {
   // ── 用户明确说要去做的事 → 待办任务 ──
   add_task: {
     name: 'add_task',
-    schema: `add_task {"title": "≤80字", "date": "执行日 YYYY-MM-DD，可选", "threadTitle": "活跃线程标题，可选"} —— 只提取【用户明确承诺要做】的事；明确的今天/明天/下周等时间要写入 date。"近期可能/以后想做/找时间做"属于潜在事项，不要创建今天待办。AI 在回复里建议的事一律不要提取。`,
+    schema: `add_task {"title": "≤80字", "date": "执行日 YYYY-MM-DD，可选", "recurrence": "none|daily|weekly:0,6|monthly，可选", "threadTitle": "活跃线程标题，可选"} —— 只提取【用户明确承诺要做】的事；明确的今天/明天/下周等时间要写入 date。每日 routine、每周打扫、每月复盘等明确周期事项填写 recurrence。"近期可能/以后想做/找时间做"属于潜在事项，不要创建今天待办。AI 在回复里建议的事一律不要提取。`,
     async run(state, args, ctx) {
       const title = clampStr(args.title, 80);
       if (!title) return skipped('add_task', '任务标题为空，已跳过', 'title 为空');
@@ -262,7 +302,8 @@ const TOOLS: Record<string, ToolDef> = {
       const hasConcreteDate = /(今天|今日|今晚|明天|后天|下周|本周|这周|周[一二三四五六日天])/.test(ctx.userMsg)
         || /\d{4}[-年/]\d{1,2}([-/月]\d{1,2}日?)?/.test(ctx.userMsg);
       const requestedDate = clampStr(args.date, 10);
-      if (vagueFuture && !hasConcreteDate && !requestedDate) {
+      const recurrence = parseRecurrence(args.recurrence);
+      if (vagueFuture && !hasConcreteDate && !requestedDate && !recurrence) {
         return {
           tool: 'suggest_thread', kind: 'suggestion',
           summary: `待确认事项「${title}」`,
@@ -281,14 +322,16 @@ const TOOLS: Record<string, ToolDef> = {
         title,
         energyCost: 'medium',
         status: 'todo',
+        kind: recurrence ? 'recurring' : 'once',
         date,
+        ...(recurrence ? { recurrence } : {}),
         ...(thread ? { threadId: thread.id } : {}),
       };
       state.tasks.push(task);
       ctx.newTasks++;
       return {
         tool: 'add_task', kind: 'done', refId: task.id,
-        summary: `已添加待办「${title}」${thread ? ` → ${thread.title}` : ''}`,
+        summary: `已添加${recurrence ? '周期待办' : '待办'}「${title}」${thread ? ` → ${thread.title}` : ''}`,
       };
     },
   },
@@ -324,15 +367,31 @@ const TOOLS: Record<string, ToolDef> = {
         );
       }
       const task = hits[0];
-      task.status = 'done';
+      const undoPayload: Record<string, string> = {
+        date: task.date,
+        status: task.status,
+        lastCompletedAt: task.lastCompletedAt ?? '',
+      };
+      const recurring = task.kind === 'recurring' && task.recurrence;
+      if (recurring) {
+        task.date = nextRecurringDate(task);
+        task.status = 'todo';
+        task.lastCompletedAt = nowIso();
+        delete task.deferredTo;
+        delete task.deferReason;
+      } else {
+        task.status = 'done';
+      }
       const thread = task.threadId ? state.threads.find((t) => t.id === task.threadId) : undefined;
       if (thread) {
         thread.lastTouchedAt = nowIso();
         thread.updatedAt = nowIso();
       }
       return {
-        tool: 'complete_task', kind: 'done', refId: task.id,
-        summary: `已勾掉待办「${task.title}」${thread ? ` → ${thread.title}` : ''}`,
+        tool: 'complete_task', kind: 'done', refId: task.id, undoPayload,
+        summary: recurring
+          ? `已完成本次「${task.title}」，下次执行日 ${task.date}${thread ? ` → ${thread.title}` : ''}`
+          : `已勾掉待办「${task.title}」${thread ? ` → ${thread.title}` : ''}`,
       };
     },
   },
@@ -867,8 +926,11 @@ export async function undoOrganize(id: string): Promise<UndoOutcome | null> {
       }
       case 'complete_task': {
         const task = state.tasks.find((x) => x.id === r.refId);
-        if (!task || task.status !== 'done') { skippedList.push(r.summary); break; }
-        task.status = 'todo';
+        if (!task || !r.undoPayload) { skippedList.push(r.summary); break; }
+        task.date = r.undoPayload.date ?? task.date;
+        task.status = (r.undoPayload.status as Task['status']) ?? 'todo';
+        if (r.undoPayload.lastCompletedAt) task.lastCompletedAt = r.undoPayload.lastCompletedAt;
+        else delete task.lastCompletedAt;
         undone.push(r.summary);
         break;
       }

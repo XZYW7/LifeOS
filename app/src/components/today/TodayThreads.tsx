@@ -47,6 +47,15 @@ function taskDateLabel(date: string, today: string): string {
   return date === today ? `今天 · ${date}` : `执行日 · ${date}`;
 }
 
+function recurrenceLabel(task: Task): string | null {
+  const rule = task.recurrence;
+  if (!rule) return null;
+  if (rule.frequency === 'daily') return '每日';
+  if (rule.frequency === 'monthly') return '每月';
+  if (rule.weekdays?.length) return `每周 ${rule.weekdays.map((day) => ['日', '一', '二', '三', '四', '五', '六'][day]).join('、')}`;
+  return '每周';
+}
+
 /** 本地日历日 → 当天零点时间戳 */
 function dayStartMs(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -89,6 +98,7 @@ export default function TodayThreads() {
   const threads = useLifeOS((s) => s.threads);
   const tasks = useLifeOS((s) => s.tasks);
   const updateTaskStatus = useLifeOS((s) => s.updateTaskStatus);
+  const completeTask = useLifeOS((s) => s.completeTask);
   const patchThread = useLifeOS((s) => s.patchThread);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -132,7 +142,8 @@ export default function TodayThreads() {
   /** 勾选 = 照顾：切 todo↔done；完成时写回线程 lastTouchedAt（行内立即出现正反馈） */
   const toggleTask = (threadId: string, task: Task) => {
     const becomingDone = task.status !== 'done';
-    updateTaskStatus(task.id, becomingDone ? 'done' : 'todo');
+    if (becomingDone) completeTask(task.id);
+    else updateTaskStatus(task.id, 'todo');
     if (becomingDone) {
       void patchThread(threadId, { lastTouchedAt: new Date().toISOString() });
     }
@@ -238,6 +249,7 @@ export default function TodayThreads() {
                                 </span>
                                 <span className="mt-0.5 block font-data text-[10px] text-muted-foreground/70">
                                   {taskDateLabel(task.date, today)} · {ENERGY_LABEL[task.energyCost]}
+                                  {recurrenceLabel(task) && ` · ${recurrenceLabel(task)}`}
                                   {task.deferredTo && ` · 原计划顺延至 ${task.deferredTo}`}
                                 </span>
                               </span>

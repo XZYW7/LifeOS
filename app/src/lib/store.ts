@@ -33,6 +33,35 @@ export function todayStr(): string {
   return `${y}-${m}-${day}`;
 }
 
+/** 计算周期任务下一次执行日；一次性任务不会调用此函数。 */
+export function nextRecurringDate(task: Task): string {
+  const recurrence = task.recurrence;
+  if (!recurrence) return task.date;
+  const [y, m, d] = task.date.split('-').map(Number);
+  const interval = Math.max(1, recurrence.interval ?? 1);
+  const cursor = new Date(y, m - 1, d);
+
+  if (recurrence.frequency === 'daily') cursor.setDate(cursor.getDate() + interval);
+  else if (recurrence.frequency === 'monthly') {
+    cursor.setMonth(cursor.getMonth() + interval);
+  } else if (recurrence.weekdays?.length) {
+    const weekdays = new Set(recurrence.weekdays);
+    for (let i = 1; i <= 14 * interval; i++) {
+      const candidate = new Date(y, m - 1, d);
+      candidate.setDate(candidate.getDate() + i);
+      if (weekdays.has(candidate.getDay())) {
+        cursor.setTime(candidate.getTime());
+        break;
+      }
+    }
+  } else cursor.setDate(cursor.getDate() + 7 * interval);
+
+  const nextY = cursor.getFullYear();
+  const nextM = String(cursor.getMonth() + 1).padStart(2, '0');
+  const nextD = String(cursor.getDate()).padStart(2, '0');
+  return `${nextY}-${nextM}-${nextD}`;
+}
+
 export function uid(prefix = 'id'): string {
   const rand = typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID().slice(0, 8)
@@ -87,6 +116,7 @@ export interface LifeOSState extends SeedData {
   // actions
   addDailyState: (state: DailyState) => void;
   updateTaskStatus: (taskId: string, status: TaskStatus) => void;
+  completeTask: (taskId: string) => void;
   addTask: (task: Task) => void;
   addGoal: (goal: Goal) => void;
   addLifeVersion: (version: LifeVersion) => void;
@@ -139,6 +169,26 @@ export const useLifeOS = create<LifeOSState>()(
           tasks: s.tasks.map((t) => (t.id === taskId ? { ...t, status } : t)),
         }));
         syncToServer(() => api.updateTask(taskId, { status }));
+      },
+
+      completeTask: (taskId) => {
+        const task = useLifeOS.getState().tasks.find((t) => t.id === taskId);
+        if (!task) return;
+        const now = new Date().toISOString();
+        if (task.kind === 'recurring' && task.recurrence) {
+          const nextDate = nextRecurringDate(task);
+          set((s) => ({
+            tasks: s.tasks.map((t) => t.id === taskId
+              ? { ...t, status: 'todo' as const, date: nextDate, lastCompletedAt: now, deferredTo: undefined, deferReason: undefined }
+              : t),
+          }));
+          syncToServer(() => api.updateTask(taskId, {
+            status: 'todo', date: nextDate, lastCompletedAt: now, deferredTo: undefined, deferReason: undefined,
+          }));
+        } else {
+          set((s) => ({ tasks: s.tasks.map((t) => (t.id === taskId ? { ...t, status: 'done' as const } : t)) }));
+          syncToServer(() => api.updateTask(taskId, { status: 'done' }));
+        }
       },
 
       addTask: (task) => {

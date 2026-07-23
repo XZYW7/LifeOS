@@ -18,6 +18,15 @@ export type GoalScale = 'vision' | 'year' | 'month' | 'week' | 'day';
 export type GoalStatus = 'planned' | 'active' | 'done' | 'dropped' | 'deferred';
 
 export type TaskStatus = 'todo' | 'done' | 'skipped';
+export type TaskKind = 'once' | 'recurring';
+export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
+
+export interface TaskRecurrence {
+  frequency: RecurrenceFrequency;
+  interval?: number;
+  /** weekly 时使用，0=周日，1=周一...6=周六 */
+  weekdays?: number[];
+}
 
 /** 记忆类型：fact=客观事实 / pattern=行为模式 / insight=Agent 洞察 */
 export type MemoryKind = 'fact' | 'pattern' | 'insight';
@@ -164,8 +173,14 @@ export interface Task {
   /** 预估能量消耗，供低功耗模式过滤（mode 适配） */
   energyCost: 'low' | 'medium' | 'high';
   status: TaskStatus;
+  /** 缺省兼容旧数据，缺省视为一次性任务 */
+  kind?: TaskKind;
   /** 计划执行日 "2026-07-09" */
   date: string;
+  /** 周期任务的规则；date 表示下一次执行日 */
+  recurrence?: TaskRecurrence;
+  /** 最近一次完成周期的时间 */
+  lastCompletedAt?: string;
   /** 维持性任务（低功耗模式下仍保留） */
   isMaintenance?: boolean;
   /** 最小连接行动：低功耗模式下为长期目标保留的 ≤15min 轻量行动 */

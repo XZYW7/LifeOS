@@ -39,6 +39,15 @@ const COST_META: Record<Task['energyCost'], { label: string; dotClass: string }>
   low: { label: '低', dotClass: 'bg-olive' },
 };
 
+function recurrenceLabel(task: Task): string | null {
+  const rule = task.recurrence;
+  if (!rule) return null;
+  if (rule.frequency === 'daily') return '每日';
+  if (rule.frequency === 'monthly') return '每月';
+  if (rule.weekdays?.length) return `每周 ${rule.weekdays.map((day) => ['日', '一', '二', '三', '四', '五', '六'][day]).join('、')}`;
+  return '每周';
+}
+
 const UNTHREADED_KEY = '__unthreaded__';
 
 interface TaskGroup {
@@ -56,12 +65,14 @@ interface TaskGroup {
 
 function TaskRow({ task }: { task: Task }) {
   const updateTaskStatus = useLifeOS((s) => s.updateTaskStatus);
+  const completeTask = useLifeOS((s) => s.completeTask);
   const toggleable = task.status !== 'skipped';
   const done = task.status === 'done';
 
   const toggle = () => {
     if (!toggleable) return;
-    updateTaskStatus(task.id, done ? 'todo' : 'done');
+    if (done) updateTaskStatus(task.id, 'todo');
+    else completeTask(task.id);
   };
 
   const cost = COST_META[task.energyCost];
@@ -115,7 +126,7 @@ function TaskRow({ task }: { task: Task }) {
 
       {/* 日期 MM-dd */}
       <span className="shrink-0 font-data text-[10px] text-muted-foreground/70">
-        {task.date.slice(5)}
+        {recurrenceLabel(task) ? `${recurrenceLabel(task)} · ` : ''}{task.date.slice(5)}
       </span>
 
       {/* 能耗小标记 */}

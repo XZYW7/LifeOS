@@ -56,6 +56,15 @@ const STATUS_LABEL: Record<Task['status'], string> = {
   skipped: '已跳过',
 };
 
+function recurrenceLabel(task: Task): string | null {
+  const rule = task.recurrence;
+  if (!rule) return null;
+  if (rule.frequency === 'daily') return '每日';
+  if (rule.frequency === 'monthly') return '每月';
+  if (rule.weekdays?.length) return `每周 ${rule.weekdays.map((day) => ['日', '一', '二', '三', '四', '五', '六'][day]).join('、')}`;
+  return '每周';
+}
+
 /** 提取线程标题核心词：按「：」/「:」切分取较长片段，长度 <2 视为无效 */
 function coreKeyword(title: string): string | null {
   const parts = title
@@ -187,6 +196,7 @@ export default function ThreadLinkage({ thread }: { thread: Thread }) {
                             </span>
                             <span className="mt-0.5 block font-data text-[10px] text-muted-foreground/60">
                               执行日 {t.date} · {ENERGY_LABEL[t.energyCost]} · {STATUS_LABEL[t.status]}
+                              {recurrenceLabel(t) && ` · ${recurrenceLabel(t)}`}
                               {t.deferredTo && ` · 顺延至 ${t.deferredTo}`}
                             </span>
                           </span>
