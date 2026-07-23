@@ -16,7 +16,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, Sparkles, Undo2 } from 'lucide-react';
 import { api, type OrganizeResult, type Receipt } from '@/lib/api';
-import { useLifeOS, uid, USER_ID } from '@/lib/store';
+import { initServerSync, useLifeOS, uid, USER_ID } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import type { Thread } from '@/types';
 
@@ -68,6 +68,8 @@ export default function OrganizedCard({ organizeId }: { organizeId: string }) {
         if (cancelled) return;
         if (data.status === 'done' && data.result) {
           setState({ phase: 'done', result: data.result });
+          // Organizer 在服务端异步落库；整理完成后刷新共享状态，让任务/碎片/记忆等页面立即反映结果。
+          void initServerSync();
           return;
         }
         if (data.status === 'failed') {

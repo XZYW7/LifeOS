@@ -253,6 +253,8 @@ async function handleChat(body: unknown): Promise<{ payload: unknown; fallback: 
   let reply: string;
   let actions: AgentAction[] = [];
   let fallback = false;
+  // 先生成整理任务 id，并写入 agent 消息，保证页面切换/刷新后仍能找到回执卡。
+  const organizeId = uid('org');
 
   if (!llm.configured) {
     fallback = true;
@@ -280,13 +282,14 @@ async function handleChat(body: unknown): Promise<{ payload: unknown; fallback: 
   const agentMsg: ChatMessage = {
     id: uid('msg'), userId, role: 'agent', content: reply,
     actions: actions.length > 0 ? actions : undefined,
+    organizeId,
     createdAt: nowIso(),
   };
   state.chatMessages.push(agentMsg);
   await saveState(state);
 
   // 第二道工序：Organizer 异步整理（不 await；结果落 state.organizeResults，前端轮询 GET /api/organize/:id）
-  const organizeId = organizer.run({ messageId: userMsg.id, userMsg: input, agentReply: reply, snapshot });
+  organizer.run({ messageId: userMsg.id, userMsg: input, agentReply: reply, snapshot }, organizeId);
 
   return { payload: { reply, actions, organizeId, agentMessageId: agentMsg.id }, fallback };
 }

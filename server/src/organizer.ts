@@ -722,8 +722,8 @@ export class Organizer {
    * 异步入口：立即返回 organizeId，整理在后台进行。
    * 调用方（POST /api/chat）不得 await 整理完成。
    */
-  run(input: OrganizerRunInput): string {
-    const id = uid('org');
+  run(input: OrganizerRunInput, existingId?: string): string {
+    const id = existingId ?? uid('org');
     this.execute(id, input).catch((e) => {
       console.warn('[organizer] 未捕获异常:', (e as Error).message);
     });

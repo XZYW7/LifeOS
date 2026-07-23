@@ -37,13 +37,19 @@ function buildContext(): ChatContext {
   };
 }
 
-function newMessage(role: ChatMessage['role'], content: string, actions?: AgentAction[]): ChatMessage {
+function newMessage(
+  role: ChatMessage['role'],
+  content: string,
+  actions?: AgentAction[],
+  organizeId?: string,
+): ChatMessage {
   return {
     id: uid('chat'),
     userId: USER_ID,
     role,
     content,
     actions,
+    organizeId,
     createdAt: new Date().toISOString(),
   };
 }
@@ -57,8 +63,6 @@ export default function ChatPage() {
 
   const [pending, setPending] = useState(false);
   const [appliedActions, setAppliedActions] = useState<ReadonlySet<string>>(new Set());
-  /** 每条 agent 消息对应的整理任务 id（key = 消息 id），渲染为该气泡下方的 OrganizedCard */
-  const [organizeByMsg, setOrganizeByMsg] = useState<Record<string, string>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // server 在线 / LLM 状态（顶部不显眼标识）
@@ -73,7 +77,7 @@ export default function ChatPage() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [chatMessages.length, pending, organizeByMsg]);
+  }, [chatMessages.length, pending]);
 
   /** 离线路径：本地规则引擎（保留原有模拟延迟） */
   const replyLocally = (text: string) => {
@@ -96,17 +100,12 @@ export default function ChatPage() {
           // 本地 agent 消息必须复用 server 落库的 id：initServerSync 会用 server 状态整体替换
           // 消息列表，id 不一致会让「已整理」卡片的挂载键失效（卡片永远渲染不出来）
           const agentMsg = result.agentMessageId
-            ? { ...newMessage('agent', result.reply, result.actions), id: result.agentMessageId }
-            : newMessage('agent', result.reply, result.actions);
+            ? { ...newMessage('agent', result.reply, result.actions, result.organizeId), id: result.agentMessageId }
+            : newMessage('agent', result.reply, result.actions, result.organizeId);
           addChatMessage(agentMsg);
           setPending(false);
 
-          // ① 对话整理管线：拿到 organizeId，由 OrganizedCard 轮询渲染「已整理」卡片
-          if (result.organizeId) {
-            setOrganizeByMsg((prev) => ({ ...prev, [agentMsg.id]: result.organizeId }));
-          }
-
-          // ② 拉取 server 全量状态刷新本地 store，线程页/轨迹页/记忆面板立刻反映新数据。
+          // 先拉取一次当前状态；整理完成后 OrganizedCard 会再拉取一次，确保待办/碎片等异步结果出现。
           //    异步执行，不阻塞消息显示；失败静默（initServerSync 内部已处理不可达回落）。
           void initServerSync();
         })
@@ -184,7 +183,7 @@ export default function ChatPage() {
                     appliedActions={appliedActions}
                     onAction={handleAction}
                   />
-                  {organizeByMsg[m.id] && <OrganizedCard organizeId={organizeByMsg[m.id]} />}
+                  {m.organizeId && <OrganizedCard organizeId={m.organizeId} />}
                 </div>
               ))}
 

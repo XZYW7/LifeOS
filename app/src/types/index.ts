@@ -287,6 +287,8 @@ export interface ChatMessage {
   content: string;
   /** Agent 回复附带的对系统的动作建议 */
   actions?: AgentAction[];
+  /** Agent 回复对应的异步整理任务；用于跨页面恢复整理回执卡 */
+  organizeId?: string;
   createdAt: string;
 }
 
