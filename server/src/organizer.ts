@@ -136,60 +136,6 @@ function normalizeEnergy(v: string): EnergyLevel | null {
   return null;
 }
 
-/** 最长公共子串长度（用于 complete_task 零命中时找最接近的待办） */
-function lcsLen(a: string, b: string): number {
-  const m = a.length;
-  const n = b.length;
-  if (!m || !n) return 0;
-  let prev = new Array<number>(n + 1).fill(0);
-  let best = 0;
-  for (let i = 1; i <= m; i++) {
-    const cur = new Array<number>(n + 1).fill(0);
-    for (let j = 1; j <= n; j++) {
-      if (a[i - 1] === b[j - 1]) {
-        cur[j] = prev[j - 1] + 1;
-        if (cur[j] > best) best = cur[j];
-      }
-    }
-    prev = cur;
-  }
-  return best;
-}
-
-function normalizeTaskTitle(value: string): string {
-  return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-}
-
-function isSubsequence(needle: string, haystack: string): boolean {
-  let index = 0;
-  for (const char of haystack) {
-    if (char === needle[index]) index++;
-    if (index === needle.length) return true;
-  }
-  return false;
-}
-
-function sharedBigramCount(a: string, b: string): number {
-  const bigrams = new Set<string>();
-  for (let i = 0; i < a.length - 1; i++) bigrams.add(a.slice(i, i + 2));
-  let count = 0;
-  for (const bigram of bigrams) {
-    if (b.includes(bigram)) count++;
-  }
-  return count;
-}
-
-/** 仅接受完整包含，或带有连续关键词锚点的完整顺序简称；歧义交给调用处拒绝。 */
-function taskTitleMatches(title: string, query: string): boolean {
-  const target = normalizeTaskTitle(title);
-  const needle = normalizeTaskTitle(query);
-  if (!needle) return false;
-  if (target === needle || target.includes(needle) || needle.includes(target)) return true;
-  if (needle.length < 3 || !isSubsequence(needle, target)) return false;
-  // 3 字简称至少保留一个连续双字词；更长简称至少保留两个，避免纯字符散落误命中。
-  return sharedBigramCount(needle, target) >= (needle.length >= 4 ? 2 : 1);
-}
-
 // ── LLM 输出（tool_calls）消毒 ──────────────────────────────────
 
 interface ToolCall {
@@ -412,37 +358,15 @@ const TOOLS: Record<string, ToolDef> = {
     },
   },
 
-  // ── 用户明确说做完了某事 → 勾掉待办（标题模糊匹配，唯一命中才执行）──
+  // ── 用户明确说做完了某事 → 按 LLM 选择的任务 ID 勾掉待办 ──
   complete_task: {
     name: 'complete_task',
-    schema: `complete_task {"taskTitle": "待办标题或其中的关键词"} —— 用户明确说做完了某事时调用。系统会在当前待办里按标题模糊匹配，唯一命中才勾掉。`,
+    schema: `complete_task {"taskId": "当前待办列表中的 id"} —— 用户明确说做完了某事时调用。必须根据语义从当前待办列表选择一个确切 id；不确定就不要调用。`,
     async run(state, args) {
-      const q = clampStr(args.taskTitle, 80);
-      if (!q) return skipped('complete_task', 'taskTitle 为空，已跳过', 'taskTitle 为空');
-      const todos = state.tasks.filter((t) => t.status === 'todo');
-      const hits = todos.filter((t) => taskTitleMatches(t.title, q));
-      if (hits.length === 0) {
-        const closest = [...todos]
-          .map((t) => ({ t, score: lcsLen(q, t.title) }))
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 2)
-          .map((x) => x.t.title);
-        return skipped(
-          'complete_task',
-          `没找到名为「${q}」的待办`,
-          '零命中',
-          closest.length > 0 ? `最接近的待办：${closest.map((s) => `「${s}」`).join('、')}` : undefined,
-        );
-      }
-      if (hits.length > 1) {
-        return skipped(
-          'complete_task',
-          `「${q}」命中了 ${hits.length} 个待办，无法确定是哪个`,
-          '多个命中',
-          hits.map((t) => `「${t.title}」`).join('、'),
-        );
-      }
-      const task = hits[0];
+      const taskId = clampStr(args.taskId, 80);
+      if (!taskId) return skipped('complete_task', 'taskId 为空，已跳过', 'taskId 为空');
+      const task = state.tasks.find((t) => t.id === taskId && t.status === 'todo');
+      if (!task) return skipped('complete_task', '待办不存在或已不是待处理状态，已跳过', 'taskId 无效');
       const undoPayload: Record<string, string> = {
         date: task.date,
         status: task.status,
@@ -472,13 +396,13 @@ const TOOLS: Record<string, ToolDef> = {
     },
   },
 
-  // ── 用户改期/改名已有待办 → 更新任务（标题模糊匹配，唯一命中才执行）──
+  // ── 用户改期/改名已有待办 → 按 LLM 选择的任务 ID 更新 ──
   update_task: {
     name: 'update_task',
-    schema: `update_task {"taskTitle": "待办标题或关键词", "newDate": "新日期 YYYY-MM-DD（可选）", "newTitle": "新标题，可选", "newRecurrence": "unchanged|once|daily|weekly:0,6|monthly，可选", "newThreadTitle": "目标活跃线程标题，可选"} —— 用户明确说某个待办改期、改周期、改内容或挪到另一线程时调用。newRecurrence=once 表示取消周期、变为一次性任务；改成每周几时用 weekly:0,6（0=周日）。至少提供一个修改字段。`,
+    schema: `update_task {"taskId": "当前待办列表中的 id", "newDate": "新日期 YYYY-MM-DD（可选）", "newTitle": "新标题，可选", "newRecurrence": "unchanged|once|daily|weekly:0,6|monthly，可选", "newThreadTitle": "目标活跃线程标题，可选"} —— 用户明确说某个待办改期、改周期、改内容或挪到另一线程时调用。必须根据语义选择一个确切 taskId；不确定就不要调用。newRecurrence=once 表示取消周期、变为一次性任务；改成每周几时用 weekly:0,6（0=周日）。至少提供一个修改字段。`,
     async run(state, args) {
-      const q = clampStr(args.taskTitle, 80);
-      if (!q) return skipped('update_task', 'taskTitle 为空，已跳过', 'taskTitle 为空');
+      const taskId = clampStr(args.taskId, 80);
+      if (!taskId) return skipped('update_task', 'taskId 为空，已跳过', 'taskId 为空');
       const newDate = clampStr(args.newDate, 10);
       const newTitle = clampStr(args.newTitle, 60);
       const newThreadTitle = clampStr(args.newThreadTitle, 60);
@@ -495,30 +419,8 @@ const TOOLS: Record<string, ToolDef> = {
         return skipped('update_task', '没有要改的内容，已跳过', '修改字段均为空');
       }
 
-      const todos = state.tasks.filter((t) => t.status === 'todo');
-      const hits = todos.filter((t) => taskTitleMatches(t.title, q));
-      if (hits.length === 0) {
-        const closest = [...todos]
-          .map((t) => ({ t, score: lcsLen(q, t.title) }))
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 2)
-          .map((x) => x.t.title);
-        return skipped(
-          'update_task',
-          `没找到名为「${q}」的待办`,
-          '零命中',
-          closest.length > 0 ? `最接近的待办：${closest.map((s) => `「${s}」`).join('、')}` : undefined,
-        );
-      }
-      if (hits.length > 1) {
-        return skipped(
-          'update_task',
-          `「${q}」命中了 ${hits.length} 个待办，无法确定是哪个`,
-          '多个命中',
-          hits.map((t) => `「${t.title}」`).join('、'),
-        );
-      }
-      const task = hits[0];
+      const task = state.tasks.find((t) => t.id === taskId && t.status === 'todo');
+      if (!task) return skipped('update_task', '待办不存在或已不是待处理状态，已跳过', 'taskId 无效');
       const undoPayload: Record<string, string> = {
         date: task.date,
         title: task.title,
@@ -777,7 +679,7 @@ function buildPrompt(input: OrganizerRunInput): string {
         const recurrence = t.recurrence?.frequency === 'daily' ? '每日'
           : t.recurrence?.frequency === 'weekly' ? '每周'
             : t.recurrence?.frequency === 'monthly' ? '每月' : '一次性';
-        return `- ${t.title}（执行日：${t.date}，${recurrence}${th ? `，线程：${th.title}` : ''}）`;
+        return `- ${t.id}｜${t.title}（执行日：${t.date}，${recurrence}${th ? `，线程：${th.title}` : ''}）`;
       }).join('\n')
     : '（当前没有待办任务）';
 
@@ -843,8 +745,8 @@ ${threadChangeList}
 ${Object.values(TOOLS).map((t) => `- ${t.schema}`).join('\n')}
 
 【判断规则】（逐条对照用户消息检查，命中的规则【必须】生成对应工具调用，不允许忽略）
-- 用户明确说做完了/搞定了/提交了某事，且【当前待办】里有相关条目 → 必须 complete_task
-- 用户明确说某个待办改期、改时间、推迟、改周期、改内容或移到另一线程 → 必须 update_task；newDate 按今天日期换算，周期写入 newRecurrence，线程写入 newThreadTitle
+- 用户明确说做完了/搞定了/提交了某事，且【当前待办】里有相关条目 → 必须按语义选择确切 taskId 后调用 complete_task；不确定就不调用
+- 用户明确说某个待办改期、改时间、推迟、改周期、改内容或移到另一线程 → 必须按语义选择确切 taskId 后调用 update_task；newDate 按今天日期换算，周期写入 newRecurrence，线程写入 newThreadTitle
 - 用户要求修改已有待办时，只能调用 update_task；不得同时再用 add_task 新建同主题副本
 - 用户明确说记版本 / 阶段结束 / 总结一下这段 → 必须 create_version（title 形如「2026年7月·求职季」，summary 基于【版本上下文】的真实数据起草，不要编造）
 - 用户明确说某线程暂停 / 恢复 / 完结 → 必须 update_thread
@@ -865,7 +767,7 @@ ${Object.values(TOOLS).map((t) => `- ${t.schema}`).join('\n')}
 只输出一个 JSON object，禁止输出任何其他文字、解释或代码块标记。
 硬性格式要求：顶层必须有且只有一个 "tool_calls" 键，值是调用数组；每个元素形如 {"tool": "工具名", "args": {...}}。
 即使只有一个调用也必须放进数组；没有值得做的事也必须输出 {"tool_calls": []}。禁止输出 {} 或其他任何键。
-正确示例：{"tool_calls": [{"tool": "complete_task", "args": {"taskTitle": "莉莉丝笔试"}}]}`;
+正确示例：{"tool_calls": [{"tool": "complete_task", "args": {"taskId": "task-abc123"}}]}`;
 }
 
 // ── 工具调用执行（逐个校验、执行、收集回执；单条失败不影响整批）──────────────────────────────────
@@ -892,18 +794,6 @@ async function runToolCalls(
     if (!tool) {
       receipts.push(skipped(call.tool, `未知工具「${call.tool}」，已跳过`, '未知工具'));
       continue;
-    }
-    if (call.tool === 'add_task') {
-      const title = clampStr(call.args.title, 80);
-      const alreadyUpdated = receipts.some((receipt) => {
-        if (receipt.tool !== 'update_task' || receipt.kind !== 'done' || !receipt.refId) return false;
-        const task = state.tasks.find((item) => item.id === receipt.refId);
-        return !!task && taskTitleMatches(task.title, title);
-      });
-      if (alreadyUpdated) {
-        receipts.push(skipped('add_task', `待办「${title}」已通过更新原任务处理，未新建副本`, '与本轮 update_task 重复'));
-        continue;
-      }
     }
     // create_version 一轮只允许 1 次（同一阶段重复提交没有语义，LLM 偶发连发两次会造成重复版本）
     const toolLimit = call.tool === 'create_version' ? 1 : MAX_PER_TOOL;
@@ -974,7 +864,7 @@ export class Organizer {
       const state = await loadState();
       const explicitUpdates: ToolCall[] = (input.taskUpdates ?? []).map((update) => ({
         tool: 'update_task',
-        args: { taskTitle: update.taskTitle, newThreadTitle: update.newThreadTitle },
+        args: { taskId: update.taskId, newThreadTitle: update.newThreadTitle },
       }));
       const receipts = await runToolCalls(state, [...calls, ...explicitUpdates], input.messageId, input.userMsg);
       receipts.push(...addExplicitTaskIntents(state, input.taskIntents ?? []));
