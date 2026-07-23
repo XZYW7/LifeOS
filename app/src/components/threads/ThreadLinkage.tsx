@@ -44,6 +44,18 @@ const KNOWLEDGE_TYPE_LABEL: Record<KnowledgeItem['type'], string> = {
 const MAX_MEMORIES = 5;
 const MAX_KNOWLEDGE = 3;
 
+const ENERGY_LABEL: Record<Task['energyCost'], string> = {
+  low: '低能耗',
+  medium: '中能耗',
+  high: '高能耗',
+};
+
+const STATUS_LABEL: Record<Task['status'], string> = {
+  todo: '待办',
+  done: '已完成',
+  skipped: '已跳过',
+};
+
 /** 提取线程标题核心词：按「：」/「:」切分取较长片段，长度 <2 视为无效 */
 function coreKeyword(title: string): string | null {
   const parts = title
@@ -162,15 +174,21 @@ export default function ThreadLinkage({ thread }: { thread: Thread }) {
                               strokeWidth={1.8}
                             />
                           )}
-                          <span
-                            className={cn(
-                              'truncate',
-                              done
-                                ? 'text-muted-foreground/60 line-through'
-                                : 'text-foreground/80',
-                            )}
-                          >
-                            {t.title}
+                          <span className="min-w-0 flex-1">
+                            <span
+                              className={cn(
+                                'block truncate',
+                                done
+                                  ? 'text-muted-foreground/60 line-through'
+                                  : 'text-foreground/80',
+                              )}
+                            >
+                              {t.title}
+                            </span>
+                            <span className="mt-0.5 block font-data text-[10px] text-muted-foreground/60">
+                              执行日 {t.date} · {ENERGY_LABEL[t.energyCost]} · {STATUS_LABEL[t.status]}
+                              {t.deferredTo && ` · 顺延至 ${t.deferredTo}`}
+                            </span>
                           </span>
                         </li>
                       );
