@@ -114,6 +114,9 @@ export default function OrganizedCard({ organizeId }: { organizeId: string }) {
   const skippedReceipts = receipts.filter((r) => r.kind === 'skipped');
   const suggestions = receipts.filter((r) => r.kind === 'suggestion');
 
+  // 没有任何落库、跳过或建议时，不占用对话流，也不提供无意义的撤销。
+  if (receipts.length === 0 && !undone) return null;
+
   const toggleExpand = (key: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);

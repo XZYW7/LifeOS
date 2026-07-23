@@ -870,7 +870,7 @@ export class Organizer {
       const state = await loadState();
       const explicitUpdates: ToolCall[] = (input.taskUpdates ?? []).map((update) => ({
         tool: 'update_task',
-        args: { taskId: update.taskId, newThreadTitle: update.newThreadTitle },
+        args: { taskId: update.taskId, newThreadTitle: update.newThreadTitle, newRecurrence: update.newRecurrence },
       }));
       const receipts = await runToolCalls(state, [...calls, ...explicitUpdates], input.messageId, input.userMsg);
       receipts.push(...addExplicitTaskIntents(state, input.taskIntents ?? []));
