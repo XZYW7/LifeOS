@@ -117,6 +117,7 @@ function sanitizeToolCalls(raw: unknown): ToolCall[] {
 interface RunContext {
   messageId: string;
   userId: string;
+  userMsg: string;
   today: string;
   /** 各工具已成功执行次数（per-tool ≤2 上限） */
   perTool: Record<string, number>;
@@ -250,12 +251,27 @@ const TOOLS: Record<string, ToolDef> = {
   // ── 用户明确说要去做的事 → 待办任务 ──
   add_task: {
     name: 'add_task',
-    schema: `add_task {"title": "≤80字", "threadTitle": "活跃线程标题，可选"} —— 只提取【用户明确说了自己要去做】的事（"我要/我决定/记得要/下周得"）。AI 在回复里建议的事一律不要提取。`,
+    schema: `add_task {"title": "≤80字", "date": "执行日 YYYY-MM-DD，可选", "threadTitle": "活跃线程标题，可选"} —— 只提取【用户明确承诺要做】的事；明确的今天/明天/下周等时间要写入 date。"近期可能/以后想做/找时间做"属于潜在事项，不要创建今天待办。AI 在回复里建议的事一律不要提取。`,
     async run(state, args, ctx) {
       const title = clampStr(args.title, 80);
       if (!title) return skipped('add_task', '任务标题为空，已跳过', 'title 为空');
       if (ctx.newTasks >= MAX_TASKS) {
         return skipped('add_task', `新任务超过单轮上限 ${MAX_TASKS} 条，已跳过`, '超过单轮新建上限');
+      }
+      const vagueFuture = /(近期|最近找时间|有空|以后|之后|将来|可能|也许|或许|考虑|潜在|待定|不确定|再看看)/.test(ctx.userMsg);
+      const hasConcreteDate = /(今天|今日|今晚|明天|后天|下周|本周|这周|周[一二三四五六日天])/.test(ctx.userMsg)
+        || /\d{4}[-年/]\d{1,2}([-/月]\d{1,2}日?)?/.test(ctx.userMsg);
+      const requestedDate = clampStr(args.date, 10);
+      if (vagueFuture && !hasConcreteDate && !requestedDate) {
+        return {
+          tool: 'suggest_thread', kind: 'suggestion',
+          summary: `待确认事项「${title}」`,
+          detail: '用户表达的是近期可能做的事，尚未确定执行日期；暂不放入今天待办。',
+        };
+      }
+      const date = requestedDate || ctx.today;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return skipped('add_task', `执行日期非法「${date}」，已跳过`, 'date 非 YYYY-MM-DD');
       }
       const threadTitle = clampStr(args.threadTitle, 60) || undefined;
       const thread = resolveThread(state, threadTitle);
@@ -265,7 +281,7 @@ const TOOLS: Record<string, ToolDef> = {
         title,
         energyCost: 'medium',
         status: 'todo',
-        date: ctx.today,
+        date,
         ...(thread ? { threadId: thread.id } : {}),
       };
       state.tasks.push(task);
@@ -653,7 +669,8 @@ ${Object.values(TOOLS).map((t) => `- ${t.schema}`).join('\n')}
 - 用户明确说某个待办改期/改时间/推迟/改内容（如“笔试改到星期五”）→ 必须 update_task（newDate 按今天日期换算成 YYYY-MM-DD）
 - 用户明确说记版本 / 阶段结束 / 总结一下这段 → 必须 create_version（title 形如「2026年7月·求职季」，summary 基于【版本上下文】的真实数据起草，不要编造）
 - 用户明确说某线程暂停 / 恢复 / 完结 → 必须 update_thread
-- 用户明确说要去做某事 → add_task
+- 用户明确承诺要去做某事 → add_task；执行日按用户明确说的日期填写，未指定日期才默认今天
+- 用户只说“近期可能/以后想做/找时间做”等模糊意向 → suggest_thread，不得创建今天待办
 - 用户明确说要持续推进新事项 → create_thread；疑似但不确定 → suggest_thread
 - 用户明确说了当下状态 → fill_checkin
 - 稳定事实/长期信息 → record_memory（先过写入纪律：Default Deny、7 天有效性测试；事件流水/一次性情绪 → record_fragment，不要用 record_memory）
@@ -678,10 +695,12 @@ async function runToolCalls(
   state: LifeOSState,
   calls: ToolCall[],
   messageId: string,
+  userMsg: string,
 ): Promise<Receipt[]> {
   const ctx: RunContext = {
     messageId,
     userId: state.user.id,
+    userMsg,
     today: todayStr(),
     perTool: {},
     newMemories: 0,
@@ -762,7 +781,7 @@ export class Organizer {
 
       // 3. 重新加载最新状态，逐个执行工具并收集回执，再一次落库
       const state = await loadState();
-      const receipts = await runToolCalls(state, calls, input.messageId);
+      const receipts = await runToolCalls(state, calls, input.messageId, input.userMsg);
       const rec = state.organizeResults.find((r) => r.id === id);
       if (rec) {
         rec.receipts = receipts;
