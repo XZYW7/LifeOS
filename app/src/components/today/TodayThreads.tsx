@@ -37,6 +37,16 @@ function localDateStr(iso: string): string {
   return `${y}-${m}-${day}`;
 }
 
+const ENERGY_LABEL: Record<Task['energyCost'], string> = {
+  low: '低能耗',
+  medium: '中能耗',
+  high: '高能耗',
+};
+
+function taskDateLabel(date: string, today: string): string {
+  return date === today ? `今天 · ${date}` : `执行日 · ${date}`;
+}
+
 /** 本地日历日 → 当天零点时间戳 */
 function dayStartMs(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -222,8 +232,14 @@ export default function TodayThreads() {
                               >
                                 <Check className="h-2.5 w-2.5" strokeWidth={2.4} />
                               </span>
-                              <span className="text-[13px] leading-relaxed text-foreground/85">
-                                {task.title}
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-[13px] leading-relaxed text-foreground/85">
+                                  {task.title}
+                                </span>
+                                <span className="mt-0.5 block font-data text-[10px] text-muted-foreground/70">
+                                  {taskDateLabel(task.date, today)} · {ENERGY_LABEL[task.energyCost]}
+                                  {task.deferredTo && ` · 原计划顺延至 ${task.deferredTo}`}
+                                </span>
                               </span>
                             </button>
                           </li>
