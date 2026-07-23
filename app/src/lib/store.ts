@@ -369,9 +369,18 @@ export async function initServerSync(): Promise<void> {
       // 首次迁移：本地上云
       await api.putState(local);
     } else if (!isBlankData(serverState)) {
+      // 兼容旧版本：整理记录已经落库，但旧 ChatMessage 没有 organizeId。
+      // 用 organizeResults.messageId 补回关联，保证历史对话也能显示回执卡。
+      const organizeIdByMessage = new Map(
+        (serverState.organizeResults ?? []).map((record) => [record.messageId, record.id]),
+      );
+      const chatMessages = serverState.chatMessages.map((message) => ({
+        ...message,
+        organizeId: message.organizeId ?? organizeIdByMessage.get(message.id),
+      }));
       // 以 server 为准（setState 合并数据字段，action 函数保留）。
       // profile 由 server 整理管线维护：server 缺省时显式置空，避免残留本地缓存的旧画像。
-      useLifeOS.setState({ ...serverState, profile: serverState.profile });
+      useLifeOS.setState({ ...serverState, chatMessages, profile: serverState.profile });
     }
     // server 空白且本地也空白：无需动作
   } catch (err) {

@@ -15,8 +15,13 @@ import type {
 } from '@/types';
 import type { SeedData } from './seed';
 
-/** GET/PUT /api/state 的全量状态：契约新增 threads / profile 字段（server 并行开发，老 server 可能缺省） */
-export type StateData = SeedData & { threads?: Thread[]; profile?: UserProfile };
+/** GET/PUT /api/state 的全量状态：契约新增 threads / profile / organizeResults 字段（老 server 可能缺省） */
+export type StateData = SeedData & {
+  threads?: Thread[];
+  profile?: UserProfile;
+  /** 兼容旧消息：旧版本没有在 ChatMessage 上持久化 organizeId，但记录仍有 messageId 关联。 */
+  organizeResults?: Array<{ id: string; messageId: string }>;
+};
 
 // ── Base URL 解析 ──────────────────────────────────
 // 默认走相对路径 `/api`（同源）：单端口部署（server 托管 dist/）和
