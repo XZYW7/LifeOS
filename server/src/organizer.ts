@@ -20,7 +20,7 @@ import type {
   Confidence, DailyState, EnergyLevel, KnowledgeItem, LifeVersion, MemoryEntry, MemoryKind,
   OrganizeRecord, Receipt, Task, Thread, ThreadDomain,
 } from './types.js';
-import type { ChatSnapshot, TaskIntent } from './super-agent.js';
+import type { ChatSnapshot, TaskIntent, TaskUpdateIntent } from './super-agent.js';
 import { rewriteProfileIfDue, unsyncedProfileMemories, PROFILE_REWRITE_THRESHOLD } from './profile.js';
 import { nowIso, todayStr, uid } from './util.js';
 
@@ -43,6 +43,7 @@ export interface OrganizerRunInput {
   snapshot: ChatSnapshot;
   /** Agent 回复同时声明的待办承诺；不从自然语言推断。 */
   taskIntents?: TaskIntent[];
+  taskUpdates?: TaskUpdateIntent[];
 }
 
 // ── 通用消毒 ──────────────────────────────────
@@ -440,12 +441,13 @@ const TOOLS: Record<string, ToolDef> = {
   // ── 用户改期/改名已有待办 → 更新任务（标题模糊匹配，唯一命中才执行）──
   update_task: {
     name: 'update_task',
-    schema: `update_task {"taskTitle": "待办标题或关键词", "newDate": "新日期 YYYY-MM-DD（可选）", "newTitle": "新标题，可选", "newRecurrence": "unchanged|once|daily|weekly:0,6|monthly，可选"} —— 用户明确说某个待办改期、改周期或改内容时调用。newRecurrence=once 表示取消周期、变为一次性任务；改成每周几时用 weekly:0,6（0=周日）。至少提供 newDate/newTitle/newRecurrence 之一。`,
+    schema: `update_task {"taskTitle": "待办标题或关键词", "newDate": "新日期 YYYY-MM-DD（可选）", "newTitle": "新标题，可选", "newRecurrence": "unchanged|once|daily|weekly:0,6|monthly，可选", "newThreadTitle": "目标活跃线程标题，可选"} —— 用户明确说某个待办改期、改周期、改内容或挪到另一线程时调用。newRecurrence=once 表示取消周期、变为一次性任务；改成每周几时用 weekly:0,6（0=周日）。至少提供一个修改字段。`,
     async run(state, args) {
       const q = clampStr(args.taskTitle, 80);
       if (!q) return skipped('update_task', 'taskTitle 为空，已跳过', 'taskTitle 为空');
       const newDate = clampStr(args.newDate, 10);
       const newTitle = clampStr(args.newTitle, 60);
+      const newThreadTitle = clampStr(args.newThreadTitle, 60);
       const newRecurrenceRaw = clampStr(args.newRecurrence, 30).toLowerCase();
       const recurrenceRequested = !!newRecurrenceRaw && newRecurrenceRaw !== 'unchanged';
       const newRecurrence = recurrenceRequested ? parseRecurrence(newRecurrenceRaw) : undefined;
@@ -455,8 +457,8 @@ const TOOLS: Record<string, ToolDef> = {
       if (recurrenceRequested && !newRecurrence && !['once', 'none'].includes(newRecurrenceRaw)) {
         return skipped('update_task', `周期规则非法「${newRecurrenceRaw}」，已跳过`, 'newRecurrence 非法');
       }
-      if (!newDate && !newTitle && !recurrenceRequested) {
-        return skipped('update_task', '没有要改的内容，已跳过', 'newDate/newTitle/newRecurrence 均为空');
+      if (!newDate && !newTitle && !recurrenceRequested && !newThreadTitle) {
+        return skipped('update_task', '没有要改的内容，已跳过', '修改字段均为空');
       }
 
       const todos = state.tasks.filter((t) => t.status === 'todo');
@@ -489,10 +491,19 @@ const TOOLS: Record<string, ToolDef> = {
         kind: task.kind ?? '',
         recurrence: task.recurrence ? JSON.stringify(task.recurrence) : '',
         lastCompletedAt: task.lastCompletedAt ?? '',
+        threadId: task.threadId ?? '',
       };
       const changes: string[] = [];
       if (newDate && newDate !== task.date) { task.date = newDate; changes.push(`改期到 ${newDate}`); }
       if (newTitle && newTitle !== task.title) { task.title = newTitle; changes.push(`改名为「${newTitle}」`); }
+      if (newThreadTitle) {
+        const targetThread = resolveThread(state, newThreadTitle);
+        if (!targetThread) return skipped('update_task', `未找到活跃线程「${newThreadTitle}」`, 'newThreadTitle 无法匹配活跃线程');
+        if (targetThread.id !== task.threadId) {
+          task.threadId = targetThread.id;
+          changes.push(`移至线程「${targetThread.title}」`);
+        }
+      }
       if (recurrenceRequested) {
         if (newRecurrence) {
           const same = task.kind === 'recurring'
@@ -799,7 +810,7 @@ ${Object.values(TOOLS).map((t) => `- ${t.schema}`).join('\n')}
 
 【判断规则】（逐条对照用户消息检查，命中的规则【必须】生成对应工具调用，不允许忽略）
 - 用户明确说做完了/搞定了/提交了某事，且【当前待办】里有相关条目 → 必须 complete_task
-- 用户明确说某个待办改期、改时间、推迟、改周期或改内容（如“笔试改到星期五”“通模改成每周三次”）→ 必须 update_task；newDate 按今天日期换算，周期写入 newRecurrence
+- 用户明确说某个待办改期、改时间、推迟、改周期、改内容或移到另一线程（如“笔试改到星期五”“通模改成每周三次”“阅读论文挪到毕业线程”）→ 必须 update_task；newDate 按今天日期换算，周期写入 newRecurrence，线程写入 newThreadTitle
 - 用户明确说记版本 / 阶段结束 / 总结一下这段 → 必须 create_version（title 形如「2026年7月·求职季」，summary 基于【版本上下文】的真实数据起草，不要编造）
 - 用户明确说某线程暂停 / 恢复 / 完结 → 必须 update_thread
 - 用户明确承诺要去做某事 → add_task；执行日按用户明确说的日期填写，未指定日期才默认今天
@@ -914,7 +925,11 @@ export class Organizer {
 
       // 3. 重新加载最新状态，逐个执行工具并收集回执，再一次落库
       const state = await loadState();
-      const receipts = await runToolCalls(state, calls, input.messageId, input.userMsg);
+      const explicitUpdates: ToolCall[] = (input.taskUpdates ?? []).map((update) => ({
+        tool: 'update_task',
+        args: { taskTitle: update.taskTitle, newThreadTitle: update.newThreadTitle },
+      }));
+      const receipts = await runToolCalls(state, [...calls, ...explicitUpdates], input.messageId, input.userMsg);
       receipts.push(...addExplicitTaskIntents(state, input.taskIntents ?? []));
       const rec = state.organizeResults.find((r) => r.id === id);
       if (rec) {
@@ -1014,6 +1029,8 @@ export async function undoOrganize(id: string): Promise<UndoOutcome | null> {
         if (!task || !r.undoPayload) { skippedList.push(r.summary); break; }
         task.date = r.undoPayload.date ?? task.date;
         task.title = r.undoPayload.title ?? task.title;
+        if (r.undoPayload.threadId) task.threadId = r.undoPayload.threadId;
+        else delete task.threadId;
         if (r.undoPayload.kind) task.kind = r.undoPayload.kind as Task['kind'];
         else delete task.kind;
         if (r.undoPayload.recurrence) {
