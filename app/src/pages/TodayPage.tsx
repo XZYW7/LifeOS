@@ -6,7 +6,7 @@
  * ② 今日两步卡（TodayTwoSteps：打卡状态 + 手机随手记提示）
  * ③ 打卡区：CheckInForm / 已打卡状态条
  * ④ DreamCard：夜间归纳（server 离线时静默隐藏）
- * ⑤ TodayThreads：线程区（平铺全部 active 线程 + 待办勾选照顾 + /api/today-nudge 提醒）
+ * ⑤ TodayThreads：线程区（只显示今天有待办的 active 线程 + 待办勾选照顾 + /api/today-nudge 提醒）
  * ⑥ DimensionPanel：五维状态 · 近 7 天
  * ⑦ AgentReadingCard：规则引擎观察（取代原 ModeAnalysisCard）
  */
@@ -142,7 +142,7 @@ export default function TodayPage() {
       {/* ④ Dream 夜间归纳（server 离线时静默隐藏） */}
       <DreamCard />
 
-      {/* ⑤ 线程区：平铺全部 active 线程，勾选待办 = 照顾 */}
+      {/* ⑤ 线程区：只显示今天有未完成待办的 active 线程，勾选待办 = 照顾 */}
       <TodayThreads />
 
       {/* ⑥ 五维状态面板 */}

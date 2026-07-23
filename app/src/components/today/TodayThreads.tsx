@@ -1,7 +1,7 @@
 /**
  * 「今天」页 · 线程区（平铺 + 提醒，取代已废弃的 TodayFocusCard 焦点卡）
  * ─────────────────────────────────────────────
- * - 平铺全部 active 线程，按 lastTouchedAt 最久未照顾的排最前（从未照顾过的最优先）；
+ * - 平铺今天有未完成待办的 active 线程，按 lastTouchedAt 最久未照顾的排最前；
  * - 每行：领域徽标 + 标题 + 右侧状态（今天已照顾 ✓ / X 天没碰 / 还没照顾过）+ 待办数徽标；
  * - 点击行展开该线程的待办任务（status=todo），圆圈复选框切换 todo↔done（updateTaskStatus）；
  *   勾选完成 = 照顾：同时 patchThread 写 lastTouchedAt=当前时间，行内立即出现「今天已照顾 ✓」；
@@ -97,27 +97,27 @@ export default function TodayThreads() {
 
   const today = useMemo(() => localDateStr(new Date().toISOString()), []);
 
-  /** active 线程：最久未照顾的排最前（从未照顾过的视为最久） */
-  const sortedThreads = useMemo<Thread[]>(() => {
-    const active = threads.filter((t) => t.status === 'active');
-    return active.sort((a, b) => {
-      const ta = a.lastTouchedAt ? new Date(a.lastTouchedAt).getTime() : 0;
-      const tb = b.lastTouchedAt ? new Date(b.lastTouchedAt).getTime() : 0;
-      return ta - tb;
-    });
-  }, [threads]);
-
-  /** threadId → 待办任务（status=todo） */
+  /** threadId → 今天的未完成待办；未来/过去日期不进入今天页 */
   const todosByThread = useMemo(() => {
     const map = new Map<string, Task[]>();
     for (const task of tasks) {
-      if (!task.threadId || task.status !== 'todo') continue;
+      if (!task.threadId || task.status !== 'todo' || task.date !== today) continue;
       const list = map.get(task.threadId);
       if (list) list.push(task);
       else map.set(task.threadId, [task]);
     }
     return map;
-  }, [tasks]);
+  }, [tasks, today]);
+
+  /** 只展示今天有待办的 active 线程；明确排到其他日期的事项不进入今天页 */
+  const sortedThreads = useMemo<Thread[]>(() => {
+    const active = threads.filter((t) => t.status === 'active' && todosByThread.has(t.id));
+    return active.sort((a, b) => {
+      const ta = a.lastTouchedAt ? new Date(a.lastTouchedAt).getTime() : 0;
+      const tb = b.lastTouchedAt ? new Date(b.lastTouchedAt).getTime() : 0;
+      return ta - tb;
+    });
+  }, [threads, todosByThread]);
 
   /** 勾选 = 照顾：切 todo↔done；完成时写回线程 lastTouchedAt（行内立即出现正反馈） */
   const toggleTask = (threadId: string, task: Task) => {
@@ -139,7 +139,7 @@ export default function TodayThreads() {
 
       {sortedThreads.length === 0 ? (
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          还没有进行中的线程——去「线程」页建一条，或随手记一条让系统帮你梳理。
+        今天没有安排中的线程待办——其他日期的事项不会显示在这里。
         </p>
       ) : (
         <ul className="mt-4 space-y-2.5">

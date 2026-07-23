@@ -34,6 +34,16 @@ export function activeThreadsOf(state: LifeOSState): Thread[] {
   return state.threads.filter((t) => t.status === 'active');
 }
 
+/** 今日页/今日提醒使用：只保留今天有未完成待办的活跃线程。 */
+export function todayThreadsOf(state: LifeOSState, date = todayStr()): Thread[] {
+  const todayThreadIds = new Set(
+    state.tasks
+      .filter((task) => task.status === 'todo' && task.date === date && task.threadId)
+      .map((task) => task.threadId as string),
+  );
+  return activeThreadsOf(state).filter((thread) => todayThreadIds.has(thread.id));
+}
+
 /**
  * 匹配 threadTitle 到真实活跃 Thread（标题精确匹配，其次互相包含匹配；
  * 匹配不上返回 undefined → 关联落空）。capture / chat / super-agent 共用。
@@ -449,7 +459,7 @@ export async function computeTodayNudge(llm: LLMClient): Promise<TodayNudge> {
   const cached = await readNudgeCache(date, mode);
   if (cached) return cached;
 
-  const actives = activeThreadsOf(state);
+  const actives = todayThreadsOf(state, date);
   let text: string | null = null;
   if (llm.configured && actives.length > 0) {
     // 最多 3 次尝试：模型偶尔返回空内容/残句，重试仍不合格则模板兜底
