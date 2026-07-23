@@ -259,6 +259,8 @@ export interface MemoryEntry {
   active: boolean;
   firstSeenAt: string;
   lastConfirmedAt: string;
+  /** 精确创建时间；旧数据缺省时可由来源消息时间回填 */
+  createdAt?: string;
   /** 被后续对话再次确认的次数（Organizer 判重时 +1） */
   confirmCount?: number;
   /** 该记忆被提交进的版本 id（无 versionId 即未提交，旧数据缺省兼容） */

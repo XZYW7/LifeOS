@@ -233,6 +233,8 @@ export interface MemoryEntry {
   active: boolean;
   firstSeenAt: string;
   lastConfirmedAt: string;
+  /** 精确创建时间；旧数据缺省时由来源消息时间回填 */
+  createdAt?: string;
   /** 被后续对话/记录再次确认的次数（>1 时 UI 显示「确认×N」徽标） */
   confirmCount?: number;
   /** 最近一次被打包进的 LifeVersion id；为空，或对应版本 createdAt 早于

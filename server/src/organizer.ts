@@ -199,7 +199,7 @@ const TOOLS: Record<string, ToolDef> = {
         ?? actives.find((m) => m.content === content);
       if (matched) {
         matched.confirmCount = (matched.confirmCount ?? 0) + 1;
-        matched.lastConfirmedAt = ctx.today;
+        matched.lastConfirmedAt = nowIso();
         return {
           tool: 'record_memory', kind: 'done', refId: matched.id,
           summary: `已确认记忆「${matched.content.slice(0, 30)}」（第 ${matched.confirmCount} 次确认）`,
@@ -220,7 +220,8 @@ const TOOLS: Record<string, ToolDef> = {
         superseded: false,
         active: true,
         firstSeenAt: ctx.today,
-        lastConfirmedAt: ctx.today,
+        lastConfirmedAt: nowIso(),
+        createdAt: nowIso(),
         confirmCount: 1,
       };
       state.memories.push(entry);

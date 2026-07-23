@@ -28,9 +28,9 @@ const KIND_ORDER: MemoryKind[] = ['fact', 'pattern', 'insight'];
 
 type SortDir = 'newest' | 'oldest';
 
-/** 排序依据：lastConfirmedAt 优先，缺失时退回 firstSeenAt */
+/** 排序依据：精确创建/确认时间优先，旧数据退回日期字段 */
 function sortKeyOf(m: MemoryEntry): string {
-  return m.lastConfirmedAt || m.firstSeenAt || '';
+  return m.createdAt || m.lastConfirmedAt || m.firstSeenAt || '';
 }
 
 /** ISO 日期 → MM-dd（无效输入时原样截断，避免抛错） */
@@ -56,7 +56,7 @@ function MemoryRow({ entry, stale }: { entry: MemoryEntry; stale: boolean }) {
       <div className="mt-2 flex items-center gap-2">
         {key && (
           <span className="font-data text-[10px] text-muted-foreground/70">
-            {entry.lastConfirmedAt ? '确认于' : '初见于'} {formatMMdd(key)}
+            {(entry.confirmCount ?? 1) > 1 ? '确认于' : '初见于'} {formatMMdd(key)}
           </span>
         )}
         <span className="ml-auto flex items-center gap-1.5">

@@ -430,7 +430,12 @@ export async function initServerSync(): Promise<void> {
       }));
       // 以 server 为准（setState 合并数据字段，action 函数保留）。
       // profile 由 server 整理管线维护：server 缺省时显式置空，避免残留本地缓存的旧画像。
-      useLifeOS.setState({ ...serverState, chatMessages, profile: serverState.profile });
+      const messageTimeById = new Map(chatMessages.map((message) => [message.id, message.createdAt]));
+      const memories = serverState.memories.map((memory) => ({
+        ...memory,
+        createdAt: memory.createdAt ?? memory.sourceRefs.map((ref) => messageTimeById.get(ref)).find(Boolean),
+      }));
+      useLifeOS.setState({ ...serverState, chatMessages, memories, profile: serverState.profile });
     }
     // server 空白且本地也空白：无需动作
   } catch (err) {

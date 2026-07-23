@@ -84,7 +84,8 @@ function buildMemory(
     superseded: false,
     active: true,
     firstSeenAt: today,
-    lastConfirmedAt: today,
+    lastConfirmedAt: nowIso(),
+    createdAt: nowIso(),
   };
 }
 
