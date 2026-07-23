@@ -156,6 +156,40 @@ function lcsLen(a: string, b: string): number {
   return best;
 }
 
+function normalizeTaskTitle(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+function isSubsequence(needle: string, haystack: string): boolean {
+  let index = 0;
+  for (const char of haystack) {
+    if (char === needle[index]) index++;
+    if (index === needle.length) return true;
+  }
+  return false;
+}
+
+function sharedBigramCount(a: string, b: string): number {
+  const bigrams = new Set<string>();
+  for (let i = 0; i < a.length - 1; i++) bigrams.add(a.slice(i, i + 2));
+  let count = 0;
+  for (const bigram of bigrams) {
+    if (b.includes(bigram)) count++;
+  }
+  return count;
+}
+
+/** 仅接受完整包含，或带有连续关键词锚点的完整顺序简称；歧义交给调用处拒绝。 */
+function taskTitleMatches(title: string, query: string): boolean {
+  const target = normalizeTaskTitle(title);
+  const needle = normalizeTaskTitle(query);
+  if (!needle) return false;
+  if (target === needle || target.includes(needle) || needle.includes(target)) return true;
+  if (needle.length < 3 || !isSubsequence(needle, target)) return false;
+  // 3 字简称至少保留一个连续双字词；更长简称至少保留两个，避免纯字符散落误命中。
+  return sharedBigramCount(needle, target) >= (needle.length >= 4 ? 2 : 1);
+}
+
 // ── LLM 输出（tool_calls）消毒 ──────────────────────────────────
 
 interface ToolCall {
@@ -386,7 +420,7 @@ const TOOLS: Record<string, ToolDef> = {
       const q = clampStr(args.taskTitle, 80);
       if (!q) return skipped('complete_task', 'taskTitle 为空，已跳过', 'taskTitle 为空');
       const todos = state.tasks.filter((t) => t.status === 'todo');
-      const hits = todos.filter((t) => t.title === q || t.title.includes(q) || q.includes(t.title));
+      const hits = todos.filter((t) => taskTitleMatches(t.title, q));
       if (hits.length === 0) {
         const closest = [...todos]
           .map((t) => ({ t, score: lcsLen(q, t.title) }))
@@ -462,7 +496,7 @@ const TOOLS: Record<string, ToolDef> = {
       }
 
       const todos = state.tasks.filter((t) => t.status === 'todo');
-      const hits = todos.filter((t) => t.title === q || t.title.includes(q) || q.includes(t.title));
+      const hits = todos.filter((t) => taskTitleMatches(t.title, q));
       if (hits.length === 0) {
         const closest = [...todos]
           .map((t) => ({ t, score: lcsLen(q, t.title) }))
@@ -810,7 +844,8 @@ ${Object.values(TOOLS).map((t) => `- ${t.schema}`).join('\n')}
 
 【判断规则】（逐条对照用户消息检查，命中的规则【必须】生成对应工具调用，不允许忽略）
 - 用户明确说做完了/搞定了/提交了某事，且【当前待办】里有相关条目 → 必须 complete_task
-- 用户明确说某个待办改期、改时间、推迟、改周期、改内容或移到另一线程（如“笔试改到星期五”“通模改成每周三次”“阅读论文挪到毕业线程”）→ 必须 update_task；newDate 按今天日期换算，周期写入 newRecurrence，线程写入 newThreadTitle
+- 用户明确说某个待办改期、改时间、推迟、改周期、改内容或移到另一线程 → 必须 update_task；newDate 按今天日期换算，周期写入 newRecurrence，线程写入 newThreadTitle
+- 用户要求修改已有待办时，只能调用 update_task；不得同时再用 add_task 新建同主题副本
 - 用户明确说记版本 / 阶段结束 / 总结一下这段 → 必须 create_version（title 形如「2026年7月·求职季」，summary 基于【版本上下文】的真实数据起草，不要编造）
 - 用户明确说某线程暂停 / 恢复 / 完结 → 必须 update_thread
 - 用户明确承诺要去做某事 → add_task；执行日按用户明确说的日期填写，未指定日期才默认今天
@@ -857,6 +892,18 @@ async function runToolCalls(
     if (!tool) {
       receipts.push(skipped(call.tool, `未知工具「${call.tool}」，已跳过`, '未知工具'));
       continue;
+    }
+    if (call.tool === 'add_task') {
+      const title = clampStr(call.args.title, 80);
+      const alreadyUpdated = receipts.some((receipt) => {
+        if (receipt.tool !== 'update_task' || receipt.kind !== 'done' || !receipt.refId) return false;
+        const task = state.tasks.find((item) => item.id === receipt.refId);
+        return !!task && taskTitleMatches(task.title, title);
+      });
+      if (alreadyUpdated) {
+        receipts.push(skipped('add_task', `待办「${title}」已通过更新原任务处理，未新建副本`, '与本轮 update_task 重复'));
+        continue;
+      }
     }
     // create_version 一轮只允许 1 次（同一阶段重复提交没有语义，LLM 偶发连发两次会造成重复版本）
     const toolLimit = call.tool === 'create_version' ? 1 : MAX_PER_TOOL;
