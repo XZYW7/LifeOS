@@ -56,7 +56,6 @@ docs/*
 # Internal / debug scripts
 scripts/
 *.bat
-!start-lifeos.bat
 !启动-LifeOS.bat
 !app/android/gradlew.bat
 
