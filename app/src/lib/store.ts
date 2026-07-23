@@ -421,12 +421,27 @@ export async function initServerSync(): Promise<void> {
     } else if (!isBlankData(serverState)) {
       // 兼容旧版本：整理记录已经落库，但旧 ChatMessage 没有 organizeId。
       // 用 organizeResults.messageId 补回关联，保证历史对话也能显示回执卡。
-      const organizeIdByMessage = new Map(
-        (serverState.organizeResults ?? []).map((record) => [record.messageId, record.id]),
-      );
+      // Organizer 的 messageId 指向触发整理的用户消息；回执卡视觉上应挂在其后的 Agent 回复下。
+      // 旧数据和新数据都统一归一到 Agent 消息，避免出现「卡片在用户消息和 Agent 回复之间」或重复显示。
+      const organizeIdByAgentMessage = new Map<string, string>();
+      for (const record of serverState.organizeResults ?? []) {
+        const sourceIndex = serverState.chatMessages.findIndex((message) => message.id === record.messageId);
+        if (sourceIndex < 0) continue;
+        let agentMessage: typeof serverState.chatMessages[number] | undefined;
+        for (const message of serverState.chatMessages.slice(sourceIndex + 1)) {
+          if (message.role === 'user') break;
+          if (message.role === 'agent') {
+            agentMessage = message;
+            break;
+          }
+        }
+        if (agentMessage) organizeIdByAgentMessage.set(agentMessage.id, record.id);
+      }
       const chatMessages = serverState.chatMessages.map((message) => ({
         ...message,
-        organizeId: message.organizeId ?? organizeIdByMessage.get(message.id),
+        organizeId: message.role === 'agent'
+          ? message.organizeId ?? organizeIdByAgentMessage.get(message.id)
+          : undefined,
       }));
       // 以 server 为准（setState 合并数据字段，action 函数保留）。
       // profile 由 server 整理管线维护：server 缺省时显式置空，避免残留本地缓存的旧画像。
