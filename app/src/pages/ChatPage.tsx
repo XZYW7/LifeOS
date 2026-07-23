@@ -8,7 +8,7 @@
  * 在线回复附带 organizeId，由 OrganizedCard 轮询 /api/organize/:id 渲染「已整理」卡片；
  * 顶部有不显眼的连接状态标识；右侧栏：Agent 长期记忆摘要（事实 / 模式 / 洞察）。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MessagesSquare } from 'lucide-react';
 import type { AgentAction, ChatContext, ChatMessage } from '@/types';
 import {
@@ -64,6 +64,19 @@ export default function ChatPage() {
   const [pending, setPending] = useState(false);
   const [appliedActions, setAppliedActions] = useState<ReadonlySet<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  /** 服务端/本地同步可能改变数组顺序；对话显示必须以消息发生时间为准。 */
+  const orderedMessages = useMemo(
+    () => chatMessages
+      .map((message, index) => ({ message, index, time: Date.parse(message.createdAt) }))
+      .sort((a, b) => {
+        const aTime = Number.isNaN(a.time) ? 0 : a.time;
+        const bTime = Number.isNaN(b.time) ? 0 : b.time;
+        return aTime - bTime || a.index - b.index;
+      })
+      .map(({ message }) => message),
+    [chatMessages],
+  );
 
   // server 在线 / LLM 状态（顶部不显眼标识）
   const serverStatus = useServerStatus();
@@ -165,7 +178,7 @@ export default function ChatPage() {
 
         {/* 消息列表 */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 md:px-8">
-          {chatMessages.length === 0 ? (
+          {orderedMessages.length === 0 ? (
             <div className="mx-auto mt-16 max-w-md rounded-lg border border-border bg-card px-6 py-8 text-center">
               <MessagesSquare className="mx-auto h-8 w-8 text-brand/60" strokeWidth={1.5} />
               <p className="mt-4 text-sm text-foreground">还没有对话记录</p>
@@ -176,7 +189,7 @@ export default function ChatPage() {
             </div>
           ) : (
             <div className="mx-auto max-w-3xl space-y-5">
-              {chatMessages.map((m) => (
+              {orderedMessages.map((m) => (
                 <div key={m.id} className="space-y-2">
                   <MessageBubble
                     message={m}
