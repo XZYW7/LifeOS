@@ -1,8 +1,42 @@
 # LifeOS
 
-A personal life operating system powered by AI, designed for local-first data storage and autonomous memory management.
+A local-first personal life operating system designed to keep life from falling apart under stress, fatigue, and information overload.
 
 [English](./README.md) | [中文](./README_CN.md)
+
+## Why LifeOS
+
+LifeOS is built around a simple problem: when energy, attention, and executive function drop, important parts of life can disappear into scattered notes, unfinished tasks, forgotten decisions, and accumulated uncertainty.
+
+Its first goal is not to optimize every aspect of life. It is to notice when things are becoming unstable, preserve what matters, and help choose the next manageable action.
+
+## Core Loop
+
+LifeOS turns everyday conversation and fragments into a continuous context for reflection and action:
+
+```text
+Capture fragments and conversations
+              ↓
+Understand and record what matters
+              ↓
+Store memories, knowledge, tasks, threads, and daily states
+              ↓
+Read the accumulated context back into the Agent
+              ↓
+Choose the next manageable action
+              ↓
+Review patterns and recover before small problems become a collapse
+```
+
+The system is designed to let you record first and organize later. The AI helps interpret and connect the record; the local data store remains the source of truth.
+
+## Design Principles
+
+- **Stabilize before optimizing**: protect today's basic functioning before pursuing ambitious plans.
+- **Capture before structure**: do not require a perfect taxonomy at the moment something happens.
+- **Evidence before narrative**: long-term conclusions should be traceable to actual records.
+- **Smallest useful action**: when energy is low, reduce the next step instead of adding pressure.
+- **Local ownership**: personal data stays under the user's control; external LLM calls are explicit and configurable.
 
 ## Features
 
