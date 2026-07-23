@@ -40,10 +40,10 @@ The system is designed to let you record first and organize later. The AI helps 
 
 ## Features
 
-- **Self-Hosted, LAN-First Architecture**: The server and primary data live on your own PC; phones and other devices connect over the local network
+- **Self-Hosted, LAN-First Architecture**: The server and primary data run on a host you control; phones and other devices can connect over the local network
 - **AI-Powered Memory**: Automatic profile generation from memory entries using LLM
 - **Memex Integration**: One-time import of memex backup archives
-- **Client-Server Sync**: Live state updates between LAN clients and the PC server
+- **Client-Server Sync**: Live state updates between clients and the LifeOS server
 - **Mobile Support**: Capacitor-based Android client, with the mobile shell extensible to iOS
 - **Thread-Based Organization**: Organize memories into conversational threads
 
@@ -83,11 +83,13 @@ npm install
 npm run dev -- --host
 ```
 
-Frontend runs on `http://localhost:5173`
+Frontend development server runs on `http://localhost:3000`
 
-Then open [http://localhost:5173](http://localhost:5173) in your browser.
+Then open [http://localhost:3000](http://localhost:3000) in your browser.
 
-For a phone or another device on the same LAN, open `http://<PC-LAN-IP>:5173` instead. Keep the LifeOS server running on the PC; the frontend proxy forwards API requests to port 3456 on that PC.
+For a phone or another device on the same LAN during development, open `http://<HOST-LAN-IP>:3000`. The Vite development server proxies API requests to LifeOS on port 3456.
+
+For the single-port mode used by the startup script, build the frontend with `cd app && npm run build`, start the server, and open `http://localhost:3456/`. The server then serves both the frontend and API; other devices can use `http://<HOST-LAN-IP>:3456/`.
 
 ## Environment Configuration
 
@@ -144,10 +146,10 @@ Memory content in markdown format.
 
 ### Client-Server State
 
-- **PC server**: The authoritative state is stored locally on the host PC with atomic JSON writes to `state.json`
-- **LAN clients**: The browser or mobile client keeps a localStorage copy for UI continuity and synchronizes with the PC server
+- **LifeOS server**: The authoritative state is stored on the host with atomic JSON writes to `state.json`
+- **Clients**: The browser or mobile client keeps a localStorage copy for UI continuity and synchronizes with the LifeOS server
 - **Startup**: If server state is blank and local browser has data, frontend syncs local data back to server
-- **Boundary**: This is not full offline-first sync yet; clients currently depend on the PC server for the complete application state
+- **Boundary**: This is not full offline-first sync yet; clients currently depend on the server for the complete application state
 - **Clear**: Wipes all data from both server and client
 
 ### Profile Generation Pipeline
@@ -217,7 +219,7 @@ See [docs/APK-BUILD.md](./docs/APK-BUILD.md) for detailed build instructions.
 
 ## Privacy & Data
 
-- **Self-hosted data**: Primary data is stored on the host PC; no cloud sync or telemetry is enabled by default
+- **Self-hosted data**: Primary data is stored on the host; no cloud sync or telemetry is enabled by default
 - **No user tracking**: You own your memories
 - **LLM calls are explicit**: Chat, capture extraction, profile synthesis, and Dream may send selected local context to the configured LLM API
 - **Memex import is one-time**: No ongoing sync with memex after import
@@ -234,8 +236,9 @@ See [docs/APK-BUILD.md](./docs/APK-BUILD.md) for detailed build instructions.
 The development server intentionally listens on the local network so an
 Android client can connect and agents can be debugged from another device.
 The current LAN mode has no authentication: use it only on a trusted private
-network, keep the firewall enabled, and never expose port 3456 to the public
-Internet. See [SECURITY.md](./SECURITY.md).
+network and keep the firewall enabled. Do not expose the unauthenticated
+server directly to the public Internet; a public deployment needs an
+authentication and reverse-proxy layer first. See [SECURITY.md](./SECURITY.md).
 
 ## Contributing
 
@@ -246,7 +249,7 @@ We welcome bug reports, feature requests, and pull requests. Please see [CONTRIB
 ### Port Already in Use
 
 - Backend (3456): stop the running process with `Ctrl+C`, or change `LIFEOS_PORT` in the server environment
-- Frontend (5173): Vite will auto-increment port; check terminal output
+- Frontend (3000): Vite will auto-increment port if needed; check terminal output
 
 ### LLM API Errors
 
