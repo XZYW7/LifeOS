@@ -751,6 +751,7 @@ ${Object.values(TOOLS).map((t) => `- ${t.schema}`).join('\n')}
 - 用户明确说记版本 / 阶段结束 / 总结一下这段 → 必须 create_version（title 形如「2026年7月·求职季」，summary 基于【版本上下文】的真实数据起草，不要编造）
 - 用户明确说某线程暂停 / 恢复 / 完结 → 必须 update_thread
 - 用户明确承诺要去做某事 → add_task；执行日按用户明确说的日期填写，未指定日期才默认今天
+- 待办的创建、完成、改期、改周期或移线程是任务状态，不是长期记忆；只留下对应任务回执，绝不同时 record_memory
 - 用户只说“近期可能/以后想做/找时间做”等模糊意向 → suggest_thread，不得创建今天待办
 - 用户明确说要持续推进新事项 → create_thread；疑似但不确定 → suggest_thread
 - 用户明确说了当下状态 → fill_checkin
@@ -789,10 +790,15 @@ async function runToolCalls(
     newThreads: 0,
   };
   const receipts: Receipt[] = [];
+  const hasTaskMutation = calls.some((call) => ['add_task', 'complete_task', 'update_task'].includes(call.tool));
   for (const call of calls) {
     const tool = TOOLS[call.tool];
     if (!tool) {
       receipts.push(skipped(call.tool, `未知工具「${call.tool}」，已跳过`, '未知工具'));
+      continue;
+    }
+    if (call.tool === 'record_memory' && hasTaskMutation) {
+      receipts.push(skipped('record_memory', '本轮含待办操作，只保留任务回执，未写入长期记忆', '任务操作不沉淀为记忆'));
       continue;
     }
     // create_version 一轮只允许 1 次（同一阶段重复提交没有语义，LLM 偶发连发两次会造成重复版本）

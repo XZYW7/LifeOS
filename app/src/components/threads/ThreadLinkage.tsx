@@ -7,8 +7,7 @@
  * 关联规则：
  * - 任务：tasks 中 threadId === thread.id（Task 类型暂未声明 threadId，
  *   这里做兼容扩展，字段落地后自动生效），todo 在前，done/skipped 置灰划线。
- * - 记忆：active && !superseded 且 sourceRefs 含 thread.id；
- *   另加关键词兜底（标题按「：」切分取较长片段，长度 ≥2），去重，最多 5 条。
+ * - 记忆：仅 active && !superseded 且 sourceRefs 显式含 thread.id，最多 5 条。
  * - 知识：标题或内容包含同一关键词，最多 3 条。
  *
  * 性能：selector 只取 store 原始数组引用（稳定，无新对象），
@@ -99,19 +98,10 @@ export default function ThreadLinkage({ thread }: { thread: Thread }) {
       .filter((t) => t.threadId === thread.id)
       .sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
 
-    // ── 记忆：sourceRefs 直连 + 关键词兜底，去重，最多 5 条 ──
-    const seen = new Set<string>();
-    const linkedMemories: MemoryEntry[] = [];
-    for (const m of memories) {
-      if (!m.active || m.superseded) continue;
-      const direct = m.sourceRefs.includes(thread.id);
-      const byKeyword = keyword !== null && m.content.includes(keyword);
-      if ((direct || byKeyword) && !seen.has(m.id)) {
-        seen.add(m.id);
-        linkedMemories.push(m);
-        if (linkedMemories.length >= MAX_MEMORIES) break;
-      }
-    }
+    // ── 记忆：只认显式关联；文本提及某线程不等于属于该线程 ──
+    const linkedMemories = memories
+      .filter((m) => m.active && !m.superseded && m.sourceRefs.includes(thread.id))
+      .slice(-MAX_MEMORIES);
 
     // ── 知识：标题或内容命中关键词，最多 3 条 ──
     const linkedKnowledge =
