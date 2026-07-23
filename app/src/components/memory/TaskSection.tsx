@@ -13,17 +13,19 @@
  * 过滤 / 分组 / 排序全部在 useMemo 内完成，避免 selector 返回新数组导致无限重渲染。
  */
 import { useMemo, useState } from 'react';
-import { Circle, CheckCircle2, MinusCircle, Link2Off } from 'lucide-react';
+import { CalendarRange, Circle, CheckCircle2, List, Link2Off, MinusCircle } from 'lucide-react';
 import type { Task, Thread, ThreadDomain } from '@/types';
 import { useLifeOS } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { DOMAIN_META } from '@/components/threads/domain';
+import TaskTimeline from '@/components/trace/TaskTimeline';
 
 // ─────────────────────────────────────────────
 // 常量
 // ─────────────────────────────────────────────
 
 type FilterKey = 'all' | 'todo' | 'done' | 'skipped';
+type ViewMode = 'list' | 'timeline';
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all', label: '全部' },
@@ -146,6 +148,7 @@ export default function TaskSection({ tasks }: { tasks: Task[] }) {
   // 只取原始引用，过滤/分组/排序全部放 useMemo
   const threads = useLifeOS((s) => s.threads);
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [view, setView] = useState<ViewMode>('list');
 
   // 各状态计数（基于全量任务，不随过滤变化）
   const counts = useMemo(() => {
@@ -206,36 +209,45 @@ export default function TaskSection({ tasks }: { tasks: Task[] }) {
 
   return (
     <div className="space-y-6">
-      {/* 过滤 chips */}
-      <div className="flex flex-wrap gap-1.5">
-        {FILTERS.map(({ key, label }) => {
-          const active = filter === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setFilter(key)}
-              className={cn(
-                'flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors',
-                active
-                  ? 'border-brand/50 bg-brand/10 font-medium text-brand'
-                  : 'border-border bg-background/40 text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {label}
-              <span
-                className={cn(
-                  'font-data text-[10px]',
-                  active ? 'text-brand/80' : 'text-muted-foreground/60',
-                )}
-              >
-                {counts[key]}
-              </span>
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex rounded-md border border-border bg-background/35 p-0.5">
+          <button type="button" onClick={() => setView('list')} className={cn('flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs transition-colors', view === 'list' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+            <List className="h-3.5 w-3.5" />列表
+          </button>
+          <button type="button" onClick={() => setView('timeline')} className={cn('flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs transition-colors', view === 'timeline' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+            <CalendarRange className="h-3.5 w-3.5" />时间轴
+          </button>
+        </div>
+
+        {view === 'list' && (
+          <div className="flex flex-wrap gap-1.5">
+            {FILTERS.map(({ key, label }) => {
+              const active = filter === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFilter(key)}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors',
+                    active
+                      ? 'border-brand/50 bg-brand/10 font-medium text-brand'
+                      : 'border-border bg-background/40 text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {label}
+                  <span className={cn('font-data text-[10px]', active ? 'text-brand/80' : 'text-muted-foreground/60')}>
+                    {counts[key]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
+      {view === 'timeline' ? <TaskTimeline tasks={tasks} threads={threads} /> : (
+      <>
       {/* 分组列表 */}
       {groups.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground">
@@ -273,6 +285,8 @@ export default function TaskSection({ tasks }: { tasks: Task[] }) {
             );
           })}
         </div>
+      )}
+      </>
       )}
     </div>
   );
