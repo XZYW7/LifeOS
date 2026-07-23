@@ -96,6 +96,48 @@ function parseRecurrence(value: unknown): Task['recurrence'] {
   return undefined;
 }
 
+/** LLM 漏掉工具调用时，识别最明确的日常 routine，避免只留下记忆而没有可执行待办。 */
+function inferDailyRoutine(userMsg: string): string | null {
+  if (!/(每天|每日|早晚|每早每晚)/.test(userMsg) || !/(要|需要|得|坚持|例行|routine)/i.test(userMsg)) {
+    return null;
+  }
+  let title = userMsg.replace(/^.*?(每天|每日)/, '').trim();
+  title = title.replace(/^(早晚|每早每晚|早上(?:和|、)?晚上)/, '').trim();
+  title = title.replace(/^(要|需要|得|坚持)/, '').trim();
+  title = title.replace(/[。！!]+$/, '').trim();
+  return title ? title.slice(0, 80) : null;
+}
+
+function addInferredDailyRoutine(state: LifeOSState, userMsg: string): Receipt | null {
+  const title = inferDailyRoutine(userMsg);
+  if (!title) return null;
+  const normalized = title.replace(/[，。、,；;\s]/g, '');
+  const duplicate = state.tasks.find((task) =>
+    task.status === 'todo' && task.title.replace(/[，。、,；;\s]/g, '').includes(normalized),
+  );
+  if (duplicate) return null;
+  const routineThread = state.threads.find((thread) =>
+    thread.status === 'active' && /(生活|秩序|身体|健康|日常)/.test(thread.title),
+  );
+  const task: Task = {
+    id: uid('task'),
+    userId: state.user.id,
+    title,
+    energyCost: 'low',
+    status: 'todo',
+    kind: 'recurring',
+    date: todayStr(),
+    recurrence: { frequency: 'daily' },
+    ...(routineThread ? { threadId: routineThread.id } : {}),
+  };
+  state.tasks.push(task);
+  return {
+    tool: 'add_task', kind: 'done', refId: task.id,
+    summary: `已补充每日周期待办「${title}」${routineThread ? ` → ${routineThread.title}` : ''}`,
+    detail: '用户明确表达了固定日常 routine；为避免只记录记忆，自动补充可执行待办。',
+  };
+}
+
 /** energy 维度 value 归一化：接受 high|medium|low，容忍中文描述 */
 function normalizeEnergy(v: string): EnergyLevel | null {
   const s = v.trim().toLowerCase();
@@ -842,6 +884,11 @@ export class Organizer {
       // 3. 重新加载最新状态，逐个执行工具并收集回执，再一次落库
       const state = await loadState();
       const receipts = await runToolCalls(state, calls, input.messageId, input.userMsg);
+      // 对“每天/早晚要做……”这类明确 routine 做最后一道漏提取兜底。
+      if (!receipts.some((receipt) => receipt.tool === 'add_task' && receipt.kind === 'done')) {
+        const inferred = addInferredDailyRoutine(state, input.userMsg);
+        if (inferred) receipts.push(inferred);
+      }
       const rec = state.organizeResults.find((r) => r.id === id);
       if (rec) {
         rec.receipts = receipts;
