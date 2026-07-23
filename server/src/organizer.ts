@@ -20,7 +20,7 @@ import type {
   Confidence, DailyState, EnergyLevel, KnowledgeItem, LifeVersion, MemoryEntry, MemoryKind,
   OrganizeRecord, Receipt, Task, Thread, ThreadDomain,
 } from './types.js';
-import type { ChatSnapshot, RecurringTaskIntent } from './super-agent.js';
+import type { ChatSnapshot, TaskIntent } from './super-agent.js';
 import { rewriteProfileIfDue, unsyncedProfileMemories, PROFILE_REWRITE_THRESHOLD } from './profile.js';
 import { nowIso, todayStr, uid } from './util.js';
 
@@ -41,8 +41,8 @@ export interface OrganizerRunInput {
   userMsg: string;
   agentReply: string;
   snapshot: ChatSnapshot;
-  /** Agent 回复同时声明的周期承诺；不从自然语言推断。 */
-  recurringTasks?: RecurringTaskIntent[];
+  /** Agent 回复同时声明的待办承诺；不从自然语言推断。 */
+  taskIntents?: TaskIntent[];
 }
 
 // ── 通用消毒 ──────────────────────────────────
@@ -98,7 +98,7 @@ function parseRecurrence(value: unknown): Task['recurrence'] {
   return undefined;
 }
 
-function addExplicitRecurringTasks(state: LifeOSState, intents: readonly RecurringTaskIntent[]): Receipt[] {
+function addExplicitTaskIntents(state: LifeOSState, intents: readonly TaskIntent[]): Receipt[] {
   const receipts: Receipt[] = [];
   for (const intent of intents.slice(0, MAX_TASKS)) {
     const normalized = intent.title.replace(/[，。、,；;\s]/g, '');
@@ -111,14 +111,15 @@ function addExplicitRecurringTasks(state: LifeOSState, intents: readonly Recurri
     const thread = resolveThread(state, intent.threadTitle);
     const task: Task = {
       id: uid('task'), userId: state.user.id, title: intent.title,
-      energyCost: 'low', status: 'todo', kind: 'recurring', date: todayStr(),
-      recurrence: { frequency: intent.recurrence },
+      energyCost: 'medium', status: 'todo', kind: intent.recurrence ? 'recurring' : 'once',
+      date: intent.date ?? todayStr(),
+      ...(intent.recurrence ? { recurrence: { frequency: intent.recurrence } } : {}),
       ...(thread ? { threadId: thread.id } : {}),
     };
     state.tasks.push(task);
     receipts.push({
       tool: 'add_task', kind: 'done', refId: task.id,
-      summary: `已添加周期待办「${task.title}」${thread ? ` → ${thread.title}` : ''}`,
+      summary: `已添加${intent.recurrence ? '周期待办' : '待办'}「${task.title}」${thread ? ` → ${thread.title}` : ''}`,
     });
   }
   return receipts;
@@ -914,7 +915,7 @@ export class Organizer {
       // 3. 重新加载最新状态，逐个执行工具并收集回执，再一次落库
       const state = await loadState();
       const receipts = await runToolCalls(state, calls, input.messageId, input.userMsg);
-      receipts.push(...addExplicitRecurringTasks(state, input.recurringTasks ?? []));
+      receipts.push(...addExplicitTaskIntents(state, input.taskIntents ?? []));
       const rec = state.organizeResults.find((r) => r.id === id);
       if (rec) {
         rec.receipts = receipts;

@@ -252,7 +252,7 @@ async function handleChat(body: unknown): Promise<{ payload: unknown; fallback: 
 
   let reply: string;
   let actions: AgentAction[] = [];
-  let recurringTasks: import('./super-agent.js').RecurringTaskIntent[] = [];
+  let taskIntents: import('./super-agent.js').TaskIntent[] = [];
   let fallback = false;
   // 先生成整理任务 id，并写入 agent 消息，保证页面切换/刷新后仍能找到回执卡。
   const organizeId = uid('org');
@@ -269,7 +269,7 @@ async function handleChat(body: unknown): Promise<{ payload: unknown; fallback: 
       const out = await superAgent.process(input, snapshot);
       reply = out.reply;
       actions = out.actions;
-      recurringTasks = out.recurringTasks;
+      taskIntents = out.taskIntents;
     } catch (e) {
       fallback = true;
       console.warn('[chat] LLM 调用失败，走规则引擎 fallback:', (e as Error).message);
@@ -291,7 +291,7 @@ async function handleChat(body: unknown): Promise<{ payload: unknown; fallback: 
   await saveState(state);
 
   // 第二道工序：Organizer 异步整理（不 await；结果落 state.organizeResults，前端轮询 GET /api/organize/:id）
-  organizer.run({ messageId: userMsg.id, userMsg: input, agentReply: reply, snapshot, recurringTasks }, organizeId);
+  organizer.run({ messageId: userMsg.id, userMsg: input, agentReply: reply, snapshot, taskIntents }, organizeId);
 
   return { payload: { reply, actions, organizeId, agentMessageId: agentMsg.id }, fallback };
 }
