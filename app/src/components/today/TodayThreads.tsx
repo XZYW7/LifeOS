@@ -121,7 +121,7 @@ export default function TodayThreads() {
   const todosByThread = useMemo(() => {
     const map = new Map<string, Task[]>();
     for (const task of tasks) {
-      if (!task.threadId || task.status !== 'todo' || task.date !== today) continue;
+      if (!task.threadId || task.status !== 'todo' || task.kind === 'longterm' || task.date !== today) continue;
       const list = map.get(task.threadId);
       if (list) list.push(task);
       else map.set(task.threadId, [task]);

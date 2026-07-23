@@ -202,7 +202,7 @@ export function generateTodayPlan(
 ): TodayPlan {
   const today = todayStr();
   const tomorrow = nextDay(today);
-  const todayTasks = tasks.filter((t) => t.date === today && t.status !== 'done');
+  const todayTasks = tasks.filter((t) => t.kind !== 'longterm' && t.date === today && t.status !== 'done');
   const mode = analysis.suggestedMode;
 
   if (mode === 'low') {

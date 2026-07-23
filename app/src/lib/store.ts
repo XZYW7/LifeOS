@@ -185,6 +185,13 @@ export const useLifeOS = create<LifeOSState>()(
           syncToServer(() => api.updateTask(taskId, {
             status: 'todo', date: nextDate, lastCompletedAt: now, deferredTo: undefined, deferReason: undefined,
           }));
+        } else if (task.kind === 'longterm') {
+          set((s) => ({
+            tasks: s.tasks.map((t) => t.id === taskId
+              ? { ...t, status: 'todo' as const, lastCompletedAt: now }
+              : t),
+          }));
+          syncToServer(() => api.updateTask(taskId, { status: 'todo', lastCompletedAt: now }));
         } else {
           set((s) => ({ tasks: s.tasks.map((t) => (t.id === taskId ? { ...t, status: 'done' as const } : t)) }));
           syncToServer(() => api.updateTask(taskId, { status: 'done' }));

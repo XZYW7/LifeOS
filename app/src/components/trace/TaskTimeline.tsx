@@ -81,7 +81,8 @@ export default function TaskTimeline({ tasks, threads }: { tasks: Task[]; thread
   const [start, setStart] = useState(today);
   const end = addDays(start, HORIZON_DAYS - 1);
   const threadById = useMemo(() => new Map(threads.map((thread) => [thread.id, thread])), [threads]);
-  const todos = useMemo(() => tasks.filter((task) => task.status === 'todo'), [tasks]);
+  const todos = useMemo(() => tasks.filter((task) => task.status === 'todo' && task.kind !== 'longterm'), [tasks]);
+  const longterm = useMemo(() => tasks.filter((task) => task.status === 'todo' && task.kind === 'longterm'), [tasks]);
   const dates = useMemo(() => Array.from({ length: HORIZON_DAYS }, (_, index) => addDays(start, index)), [start]);
 
   const overdue = useMemo(
@@ -158,6 +159,27 @@ export default function TaskTimeline({ tasks, threads }: { tasks: Task[]; thread
                   <div className="text-sm text-foreground">{task.title}</div>
                   <div className="mt-1 font-data text-[10px] text-muted-foreground/70">
                     {recurrenceLabel(task)} · 下次 {task.date}
+                    {thread && ` · ${thread.title}`}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {longterm.length > 0 && (
+        <section>
+          <header className="text-xs font-medium text-muted-foreground">长期推进</header>
+          <p className="mt-1 text-[11px] text-muted-foreground/70">没有截止日；推进一次只记录进展，不会自动生成下一次待办。</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {longterm.map((task) => {
+              const thread = task.threadId ? threadById.get(task.threadId) : undefined;
+              return (
+                <div key={task.id} className="rounded-md border border-border bg-card px-3 py-2.5">
+                  <div className="text-sm text-foreground">{task.title}</div>
+                  <div className="mt-1 font-data text-[10px] text-muted-foreground/70">
+                    {task.lastCompletedAt ? `最近推进 ${task.lastCompletedAt.slice(0, 10)}` : '尚未记录推进'}
                     {thread && ` · ${thread.title}`}
                   </div>
                 </div>

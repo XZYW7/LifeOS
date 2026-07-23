@@ -105,14 +105,14 @@ function addExplicitTaskIntents(state: LifeOSState, intents: readonly TaskIntent
     const normalized = intent.title.replace(/[，。、,；;\s]/g, '');
     const duplicate = state.tasks.find((task) =>
       task.status === 'todo'
-      && task.recurrence?.frequency === intent.recurrence
+      && task.kind === (intent.kind === 'longterm' ? 'longterm' : intent.recurrence ? 'recurring' : 'once')
       && task.title.replace(/[，。、,；;\s]/g, '') === normalized,
     );
     if (duplicate) continue;
     const thread = resolveThread(state, intent.threadTitle);
     const task: Task = {
       id: uid('task'), userId: state.user.id, title: intent.title,
-      energyCost: 'medium', status: 'todo', kind: intent.recurrence ? 'recurring' : 'once',
+      energyCost: 'medium', status: 'todo', kind: intent.kind === 'longterm' ? 'longterm' : intent.recurrence ? 'recurring' : 'once',
       date: intent.date ?? todayStr(),
       ...(intent.recurrence ? { recurrence: { frequency: intent.recurrence } } : {}),
       ...(thread ? { threadId: thread.id } : {}),
@@ -120,7 +120,7 @@ function addExplicitTaskIntents(state: LifeOSState, intents: readonly TaskIntent
     state.tasks.push(task);
     receipts.push({
       tool: 'add_task', kind: 'done', refId: task.id,
-      summary: `已添加${intent.recurrence ? '周期待办' : '待办'}「${task.title}」${thread ? ` → ${thread.title}` : ''}`,
+      summary: `已添加${intent.kind === 'longterm' ? '长期任务' : intent.recurrence ? '周期待办' : '待办'}「${task.title}」${thread ? ` → ${thread.title}` : ''}`,
     });
   }
   return receipts;
@@ -302,7 +302,7 @@ const TOOLS: Record<string, ToolDef> = {
   // ── 用户明确说要去做的事 → 待办任务 ──
   add_task: {
     name: 'add_task',
-    schema: `add_task {"title": "≤80字", "date": "执行日 YYYY-MM-DD，可选", "recurrence": "none|daily|weekly:0,6|monthly，可选", "threadTitle": "活跃线程标题，可选"} —— 只提取【用户明确承诺要做】的事；明确的今天/明天/下周等时间要写入 date。每日 routine、每周打扫、每月复盘等明确周期事项填写 recurrence。"近期可能/以后想做/找时间做"属于潜在事项，不要创建今天待办。AI 在回复里建议的事一律不要提取。`,
+    schema: `add_task {"title": "≤80字", "date": "执行日 YYYY-MM-DD，可选", "recurrence": "none|daily|weekly:0,6|monthly（明确重复事务）", "kind": "longterm（学习/阅读/项目等长期推进项）", "threadTitle": "活跃线程标题，可选"} —— 只提取【用户明确承诺要做】的事；明确的今天/明天/下周等时间要写入 date。每日 routine、每周打扫、每月复盘等明确周期事项填写 recurrence；长期推进项用 kind=longterm，不要伪装成每周任务。"近期可能/以后想做/找时间做"属于潜在事项，不要创建今天待办。AI 在回复里建议的事一律不要提取。`,
     async run(state, args, ctx) {
       const title = clampStr(args.title, 80);
       if (!title) return skipped('add_task', '任务标题为空，已跳过', 'title 为空');
@@ -314,7 +314,9 @@ const TOOLS: Record<string, ToolDef> = {
         || /\d{4}[-年/]\d{1,2}([-/月]\d{1,2}日?)?/.test(ctx.userMsg);
       const requestedDate = clampStr(args.date, 10);
       const recurrence = parseRecurrence(args.recurrence);
-      if (vagueFuture && !hasConcreteDate && !requestedDate && !recurrence) {
+      const longterm = args.kind === 'longterm';
+      if (longterm && recurrence) return skipped('add_task', '长期任务不能同时设置周期规则，已跳过', 'kind 与 recurrence 冲突');
+      if (vagueFuture && !hasConcreteDate && !requestedDate && !recurrence && !longterm) {
         return {
           tool: 'suggest_thread', kind: 'suggestion',
           summary: `待确认事项「${title}」`,
@@ -344,7 +346,7 @@ const TOOLS: Record<string, ToolDef> = {
         title,
         energyCost: 'medium',
         status: 'todo',
-        kind: recurrence ? 'recurring' : 'once',
+        kind: longterm ? 'longterm' : recurrence ? 'recurring' : 'once',
         date,
         ...(recurrence ? { recurrence } : {}),
         ...(thread ? { threadId: thread.id } : {}),
@@ -353,7 +355,7 @@ const TOOLS: Record<string, ToolDef> = {
       ctx.newTasks++;
       return {
         tool: 'add_task', kind: 'done', refId: task.id,
-        summary: `已添加${recurrence ? '周期待办' : '待办'}「${title}」${thread ? ` → ${thread.title}` : ''}`,
+        summary: `已添加${longterm ? '长期任务' : recurrence ? '周期待办' : '待办'}「${title}」${thread ? ` → ${thread.title}` : ''}`,
       };
     },
   },
@@ -373,12 +375,15 @@ const TOOLS: Record<string, ToolDef> = {
         lastCompletedAt: task.lastCompletedAt ?? '',
       };
       const recurring = task.kind === 'recurring' && task.recurrence;
+      const longterm = task.kind === 'longterm';
       if (recurring) {
         task.date = nextRecurringDate(task);
         task.status = 'todo';
         task.lastCompletedAt = nowIso();
         delete task.deferredTo;
         delete task.deferReason;
+      } else if (longterm) {
+        task.lastCompletedAt = nowIso();
       } else {
         task.status = 'done';
       }
@@ -391,6 +396,8 @@ const TOOLS: Record<string, ToolDef> = {
         tool: 'complete_task', kind: 'done', refId: task.id, undoPayload,
         summary: recurring
           ? `已完成本次「${task.title}」，下次执行日 ${task.date}${thread ? ` → ${thread.title}` : ''}`
+          : longterm
+            ? `已记录推进「${task.title}」${thread ? ` → ${thread.title}` : ''}`
           : `已勾掉待办「${task.title}」${thread ? ` → ${thread.title}` : ''}`,
       };
     },
@@ -399,7 +406,7 @@ const TOOLS: Record<string, ToolDef> = {
   // ── 用户改期/改名已有待办 → 按 LLM 选择的任务 ID 更新 ──
   update_task: {
     name: 'update_task',
-    schema: `update_task {"taskId": "当前待办列表中的 id", "newDate": "新日期 YYYY-MM-DD（可选）", "newTitle": "新标题，可选", "newRecurrence": "unchanged|once|daily|weekly:0,6|monthly，可选", "newThreadTitle": "目标活跃线程标题，可选"} —— 用户明确说某个待办改期、改周期、改内容或挪到另一线程时调用。必须根据语义选择一个确切 taskId；不确定就不要调用。newRecurrence=once 表示取消周期、变为一次性任务；改成每周几时用 weekly:0,6（0=周日）。至少提供一个修改字段。`,
+    schema: `update_task {"taskId": "当前待办列表中的 id", "newDate": "新日期 YYYY-MM-DD（可选）", "newTitle": "新标题，可选", "newRecurrence": "unchanged|once|daily|weekly:0,6|monthly（重复事务）", "newKind": "longterm（长期推进项）", "newThreadTitle": "目标活跃线程标题，可选"} —— 用户明确说某个待办改期、改周期、改内容或挪到另一线程时调用。必须根据语义选择一个确切 taskId；不确定就不要调用。学习、阅读、项目等长期推进项用 newKind=longterm，不要填每周。至少提供一个修改字段。`,
     async run(state, args) {
       const taskId = clampStr(args.taskId, 80);
       if (!taskId) return skipped('update_task', 'taskId 为空，已跳过', 'taskId 为空');
@@ -407,6 +414,7 @@ const TOOLS: Record<string, ToolDef> = {
       const newTitle = clampStr(args.newTitle, 60);
       const newThreadTitle = clampStr(args.newThreadTitle, 60);
       const newRecurrenceRaw = clampStr(args.newRecurrence, 30).toLowerCase();
+      const newKind = clampStr(args.newKind, 20).toLowerCase();
       const recurrenceRequested = !!newRecurrenceRaw && newRecurrenceRaw !== 'unchanged';
       const newRecurrence = recurrenceRequested ? parseRecurrence(newRecurrenceRaw) : undefined;
       if (newDate && !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
@@ -415,7 +423,9 @@ const TOOLS: Record<string, ToolDef> = {
       if (recurrenceRequested && !newRecurrence && !['once', 'none'].includes(newRecurrenceRaw)) {
         return skipped('update_task', `周期规则非法「${newRecurrenceRaw}」，已跳过`, 'newRecurrence 非法');
       }
-      if (!newDate && !newTitle && !recurrenceRequested && !newThreadTitle) {
+      if (newKind && newKind !== 'longterm') return skipped('update_task', `任务类型非法「${newKind}」，已跳过`, 'newKind 非法');
+      if (newKind && recurrenceRequested) return skipped('update_task', '长期任务不能同时设置周期规则，已跳过', 'newKind 与 newRecurrence 冲突');
+      if (!newDate && !newTitle && !recurrenceRequested && !newKind && !newThreadTitle) {
         return skipped('update_task', '没有要改的内容，已跳过', '修改字段均为空');
       }
 
@@ -439,6 +449,12 @@ const TOOLS: Record<string, ToolDef> = {
           task.threadId = targetThread.id;
           changes.push(`移至线程「${targetThread.title}」`);
         }
+      }
+      if (newKind === 'longterm' && task.kind !== 'longterm') {
+        task.kind = 'longterm';
+        delete task.recurrence;
+        delete task.lastCompletedAt;
+        changes.push('改为长期任务');
       }
       if (recurrenceRequested) {
         if (newRecurrence) {
@@ -676,7 +692,8 @@ function buildPrompt(input: OrganizerRunInput): string {
   const todoList = todoTasks.length > 0
     ? todoTasks.map((t) => {
         const th = t.threadId ? snapshot.threads.find((x) => x.id === t.threadId) : undefined;
-        const recurrence = t.recurrence?.frequency === 'daily' ? '每日'
+        const recurrence = t.kind === 'longterm' ? '长期任务'
+          : t.recurrence?.frequency === 'daily' ? '每日'
           : t.recurrence?.frequency === 'weekly' ? '每周'
             : t.recurrence?.frequency === 'monthly' ? '每月' : '一次性';
         return `- ${t.id}｜${t.title}（执行日：${t.date}，${recurrence}${th ? `，线程：${th.title}` : ''}）`;
@@ -746,7 +763,7 @@ ${Object.values(TOOLS).map((t) => `- ${t.schema}`).join('\n')}
 
 【判断规则】（逐条对照用户消息检查，命中的规则【必须】生成对应工具调用，不允许忽略）
 - 用户明确说做完了/搞定了/提交了某事，且【当前待办】里有相关条目 → 必须按语义选择确切 taskId 后调用 complete_task；不确定就不调用
-- 用户明确说某个待办改期、改时间、推迟、改周期、改内容或移到另一线程 → 必须按语义选择确切 taskId 后调用 update_task；newDate 按今天日期换算，周期写入 newRecurrence，线程写入 newThreadTitle
+- 用户明确说某个待办改期、改时间、推迟、改周期、改内容或移到另一线程 → 必须按语义选择确切 taskId 后调用 update_task；newDate 按今天日期换算，重复事务写 newRecurrence，学习/阅读/项目等长期推进写 newKind=longterm，线程写入 newThreadTitle
 - 用户要求修改已有待办时，只能调用 update_task；不得同时再用 add_task 新建同主题副本
 - 用户明确说记版本 / 阶段结束 / 总结一下这段 → 必须 create_version（title 形如「2026年7月·求职季」，summary 基于【版本上下文】的真实数据起草，不要编造）
 - 用户明确说某线程暂停 / 恢复 / 完结 → 必须 update_thread
@@ -870,7 +887,7 @@ export class Organizer {
       const state = await loadState();
       const explicitUpdates: ToolCall[] = (input.taskUpdates ?? []).map((update) => ({
         tool: 'update_task',
-        args: { taskId: update.taskId, newThreadTitle: update.newThreadTitle, newRecurrence: update.newRecurrence },
+        args: { taskId: update.taskId, newThreadTitle: update.newThreadTitle, newRecurrence: update.newRecurrence, newKind: update.newKind },
       }));
       const receipts = await runToolCalls(state, [...calls, ...explicitUpdates], input.messageId, input.userMsg);
       receipts.push(...addExplicitTaskIntents(state, input.taskIntents ?? []));

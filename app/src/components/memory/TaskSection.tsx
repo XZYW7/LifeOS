@@ -128,7 +128,7 @@ function TaskRow({ task }: { task: Task }) {
 
       {/* 日期 MM-dd */}
       <span className="shrink-0 font-data text-[10px] text-muted-foreground/70">
-        {recurrenceLabel(task) ? `${recurrenceLabel(task)} · ` : ''}{task.date.slice(5)}
+        {task.kind === 'longterm' ? '长期推进' : `${recurrenceLabel(task) ? `${recurrenceLabel(task)} · ` : ''}${task.date.slice(5)}`}
       </span>
 
       {/* 能耗小标记 */}

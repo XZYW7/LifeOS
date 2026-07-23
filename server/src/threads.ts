@@ -38,7 +38,7 @@ export function activeThreadsOf(state: LifeOSState): Thread[] {
 export function todayThreadsOf(state: LifeOSState, date = todayStr()): Thread[] {
   const todayThreadIds = new Set(
     state.tasks
-      .filter((task) => task.status === 'todo' && task.date === date && task.threadId)
+      .filter((task) => task.status === 'todo' && task.kind !== 'longterm' && task.date === date && task.threadId)
       .map((task) => task.threadId as string),
   );
   return activeThreadsOf(state).filter((thread) => todayThreadIds.has(thread.id));

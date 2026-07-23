@@ -185,7 +185,7 @@ export default function ThreadLinkage({ thread }: { thread: Thread }) {
                               {t.title}
                             </span>
                             <span className="mt-0.5 block font-data text-[10px] text-muted-foreground/60">
-                              执行日 {t.date} · {ENERGY_LABEL[t.energyCost]} · {STATUS_LABEL[t.status]}
+                              {t.kind === 'longterm' ? '长期推进' : `执行日 ${t.date}`} · {ENERGY_LABEL[t.energyCost]} · {STATUS_LABEL[t.status]}
                               {recurrenceLabel(t) && ` · ${recurrenceLabel(t)}`}
                               {t.deferredTo && ` · 顺延至 ${t.deferredTo}`}
                             </span>

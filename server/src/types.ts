@@ -18,7 +18,7 @@ export type GoalScale = 'vision' | 'year' | 'month' | 'week' | 'day';
 export type GoalStatus = 'planned' | 'active' | 'done' | 'dropped' | 'deferred';
 
 export type TaskStatus = 'todo' | 'done' | 'skipped';
-export type TaskKind = 'once' | 'recurring';
+export type TaskKind = 'once' | 'recurring' | 'longterm';
 export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
 
 export interface TaskRecurrence {
@@ -189,7 +189,7 @@ export interface Task {
   status: TaskStatus;
   /** 缺省兼容旧数据，缺省视为一次性任务 */
   kind?: TaskKind;
-  /** 计划执行日 "2026-07-09" */
+  /** 计划执行日；longterm 任务保留创建时日期以兼容旧数据，但不作为截止日 */
   date: string;
   /** 周期任务的规则；date 表示下一次执行日 */
   recurrence?: TaskRecurrence;
